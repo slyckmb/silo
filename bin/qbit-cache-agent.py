@@ -227,7 +227,7 @@ def _ensure_daemon(
 
 
 def parse_args() -> argparse.Namespace:
-    base_dir = Path.home() / ".cache" / "hashall" / "qbit"
+    base_dir = Path.home() / ".cache" / "qbitui"
     parser = argparse.ArgumentParser(
         description="Return qB torrents/info JSON from shared cache, with lease renewal."
     )
