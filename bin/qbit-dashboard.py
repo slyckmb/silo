@@ -1061,10 +1061,11 @@ def draw_footer_full_compact(
     line1 = f"{colors.FG_SECONDARY}Actions:{colors.RESET} {actions}"
     line2 = (
         f"{colors.FG_SECONDARY}Nav:{colors.RESET} "
-        f"{colors.YELLOW_BOLD}Space{colors.RESET}{colors.FG_SECONDARY}=toggle-select  "
+        f"{colors.YELLOW_BOLD}Space/Enter{colors.RESET}{colors.FG_SECONDARY}=select  "
         f"{colors.YELLOW_BOLD}↑↓ '/{colors.RESET}{colors.FG_SECONDARY}=move  "
         f"{colors.YELLOW_BOLD},.{colors.RESET}{colors.FG_SECONDARY}=page  "
-        f"{colors.BLUE_BOLD}Enter{colors.RESET}{colors.FG_SECONDARY}=details  "
+        f"{colors.BLUE_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=open tabs  "
+        f"{colors.PURPLE_BOLD}~{colors.RESET}{colors.FG_SECONDARY}=back/clear  "
         f"{colors.PURPLE_BOLD}?{colors.RESET}{colors.FG_SECONDARY}=help  "
         f"{colors.PURPLE_BOLD}i{colors.RESET}{colors.FG_SECONDARY}=cache  "
         f"{colors.PURPLE_BOLD}q{colors.RESET}{colors.FG_SECONDARY}=quit{colors.RESET}"
@@ -1291,10 +1292,10 @@ def draw_footer_v2(
 
         # ── Line 2: NAVIGATE ─────────────────────────────────────────────────
         nav_parts = [
-            f"{colors.YELLOW_BOLD}Space{colors.RESET}{colors.FG_SECONDARY}=toggle-select{colors.RESET}",
+            f"{colors.YELLOW_BOLD}Space/Enter{colors.RESET}{colors.FG_SECONDARY}=select{colors.RESET}",
             f"{colors.YELLOW_BOLD}↑↓ '/{colors.RESET}{colors.FG_SECONDARY}=move{colors.RESET}",
             f"{colors.YELLOW_BOLD},.{colors.RESET}{colors.FG_SECONDARY}=page{colors.RESET}",
-            f"{colors.BLUE_BOLD}Enter{colors.RESET}{colors.FG_SECONDARY}=details{colors.RESET}",
+            f"{colors.BLUE_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=open tabs{colors.RESET}",
             f"{colors.PURPLE_BOLD}~{colors.RESET}{colors.FG_SECONDARY}=back/clear{colors.RESET}",
         ]
         global_parts = [
@@ -3309,13 +3310,16 @@ def main() -> int:
                     help_lines = []
                     help_lines.append(f"{colors.CYAN_BOLD}QBITUI HELP{colors.RESET}")
                     help_lines.append("")
-                    help_lines.append(f"{colors.YELLOW}Navigation:{colors.RESET}  ↑/↓ or '/  move cursor  │  , .  page prev/next  │  Space  toggle-select  │  Enter  details  │  ~  back/clear")
+                    help_lines.append(f"{colors.YELLOW}Navigation:{colors.RESET}  ↑/↓ or '/=move  , .=page  PgUp/PgDn=page  0-9=jump to row  Space/Enter=toggle-select")
+                    help_lines.append(f"             Tab=open detail tabs  Shift-Tab=prev tab  ~=back/clear selection")
                     help_lines.append(f"{colors.YELLOW}Scope:{colors.RESET}       a=All  w=Downloading  u=Uploading  v=Paused  e=Completed  g=Error")
-                    help_lines.append(f"{colors.YELLOW}Sort:{colors.RESET}        s=cycle field  o=toggle asc/desc")
-                    help_lines.append(f"{colors.YELLOW}Filter:{colors.RESET}      f=status  c=category  #=tag  l=line filter (text, hash…)  x=toggle  p=presets")
-                    help_lines.append(f"{colors.YELLOW}View:{colors.RESET}        Tab/Shift-Tab=content tabs  z=reset  t=tags  d=date  h=hash  n=narrow  m=media  X=clear MI cache")
+                    help_lines.append(f"{colors.YELLOW}Sort:{colors.RESET}        s=cycle sort field  o=toggle asc/desc")
+                    help_lines.append(f"{colors.YELLOW}Filter:{colors.RESET}      f=status  c=category  #=tag  l=compound  x=pause/resume all filters  p=presets (1-9 load, s1-s9 save)")
+                    help_lines.append(f"{colors.YELLOW}View:{colors.RESET}        z=reset all  t=tags  d=date  h=hash  n=narrow  m=media inline  X=clear MI cache")
                     help_lines.append(f"{colors.YELLOW}Global:{colors.RESET}      ?=help  i=cache status  q=quit  Ctrl-Q=quit")
-                    help_lines.append(f"{colors.YELLOW}Actions:{colors.RESET}     (select a torrent first)  P=Pause/Resume  D=Delete  C=Category  E=Tags  T=Trackers  Q=QC  M=Macros")
+                    help_lines.append(f"{colors.YELLOW}Actions:{colors.RESET}     (select a torrent first)")
+                    help_lines.append(f"             P=Pause/Resume  V=Verify  C=Category  E=Tags  T=Trackers  Q=QC  D=Delete")
+                    help_lines.append(f"             Tab=Content tabs  M=Macro menu  Shift+1-9=direct macro")
                     
                     help_lines.append(f"\n{colors.CYAN_BOLD}STATUS MAPPING TABLE{colors.RESET}")
                     help_lines.append(f"{'Code':<5} {'API Term':<20} {'Group/Description':<30}")
