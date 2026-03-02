@@ -34,7 +34,7 @@ except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 SCRIPT_NAME = "qbit-dashboard"
-VERSION = "1.12.1"
+VERSION = "1.12.2"
 LAST_UPDATED = "2026-03-02"
 FULL_TUI_MIN_WIDTH = 120
 
@@ -3314,13 +3314,34 @@ def main() -> int:
                     help_lines.append(f"             Tab=open detail tabs  Shift-Tab=prev tab  ~=back/clear selection")
                     help_lines.append(f"{colors.YELLOW}Scope:{colors.RESET}       a=All  w=Downloading  u=Uploading  v=Paused  e=Completed  g=Error")
                     help_lines.append(f"{colors.YELLOW}Sort:{colors.RESET}        s=cycle sort field  o=toggle asc/desc")
-                    help_lines.append(f"{colors.YELLOW}Filter:{colors.RESET}      f=status  c=category  #=tag  l=compound  x=pause/resume all filters  p=presets (1-9 load, s1-s9 save)")
+                    help_lines.append(f"{colors.YELLOW}Filter:{colors.RESET}      f=status  c=category  #=tag  l=compound  x=pause/resume all  p=presets")
                     help_lines.append(f"{colors.YELLOW}View:{colors.RESET}        z=reset all  t=tags  d=date  h=hash  n=narrow  m=media inline  X=clear MI cache")
                     help_lines.append(f"{colors.YELLOW}Global:{colors.RESET}      ?=help  i=cache status  q=quit  Ctrl-Q=quit")
                     help_lines.append(f"{colors.YELLOW}Actions:{colors.RESET}     (select a torrent first)")
                     help_lines.append(f"             P=Pause/Resume  V=Verify  C=Category  E=Tags  T=Trackers  Q=QC  D=Delete")
                     help_lines.append(f"             Tab=Content tabs  M=Macro menu  Shift+1-9=direct macro")
-                    
+
+                    help_lines.append(f"\n{colors.CYAN_BOLD}FILTER REFERENCE{colors.RESET}")
+                    help_lines.append(f"{colors.YELLOW}f  Status:{colors.RESET}   Groups: downloading  seeding  paused  completed  error  checking  all")
+                    help_lines.append(f"             Comma-list for multiple: seeding,paused")
+                    help_lines.append(f"             Prefix ! to exclude:    !completed")
+                    help_lines.append(f"{colors.YELLOW}c  Category:{colors.RESET} Exact category name  (case-insensitive)")
+                    help_lines.append(f"             -  matches uncategorized torrents")
+                    help_lines.append(f"             !name  excludes that category")
+                    help_lines.append(f"{colors.YELLOW}#  Tag:{colors.RESET}      tagA              has tag tagA")
+                    help_lines.append(f"             tagA,tagB         has tagA OR tagB")
+                    help_lines.append(f"             tagA+tagB         has tagA AND tagB")
+                    help_lines.append(f"             !tagA             does NOT have tagA")
+                    help_lines.append(f"             !tagA+!tagB       has neither tagA nor tagB")
+                    help_lines.append(f"{colors.YELLOW}l  Compound:{colors.RESET} Space-separated key=value pairs in one line:")
+                    help_lines.append(f"             q=name  cat=category  tag=tagexpr  hash=abc  status=grp")
+                    help_lines.append(f"             Example: q=ubuntu cat=linux status=seeding")
+                    help_lines.append(f"{colors.YELLOW}x  Toggle:{colors.RESET}   Pause / resume all filters without clearing them")
+                    help_lines.append(f"{colors.YELLOW}p  Presets:{colors.RESET}  Save/load named filter sets. At the prompt:")
+                    help_lines.append(f"             1-9       load filter set from slot N")
+                    help_lines.append(f"             s1-s9     save current filters to slot N")
+                    help_lines.append(f"             Clearing a filter: press its key and leave blank")
+
                     help_lines.append(f"\n{colors.CYAN_BOLD}STATUS MAPPING TABLE{colors.RESET}")
                     help_lines.append(f"{'Code':<5} {'API Term':<20} {'Group/Description':<30}")
                     help_lines.append("-" * 60)
@@ -3625,7 +3646,7 @@ def main() -> int:
                     continue
                 if key == "c":
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                    val = read_line("Category filter (blank clears, '-' for none): ").strip()
+                    val = read_line("Category  (exact name  -=uncategorized  !name=exclude  blank=clear): ").strip()
                     filters = [f for f in filters if f.get("type") != "category"]
                     if val:
                         negate = False
@@ -3634,7 +3655,7 @@ def main() -> int:
                     tty.setraw(fd); have_full_draw = False; continue
                 if key == "#":
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                    val = read_line("Tag filter expression: ").strip()
+                    val = read_line("Tag  (tagA  tagA,tagB=OR  tagA+tagB=AND  !tagA=NOT  blank=clear): ").strip()
                     filters = [f for f in filters if f.get("type") != "tag"]
                     if val:
                         parsed = parse_tag_filter(val)
@@ -3642,26 +3663,23 @@ def main() -> int:
                     tty.setraw(fd); have_full_draw = False; continue
                 if key == "l":
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                    val = read_line("Filter line (e.g. q=term cat=movies tag=tag1 hash=abc status=downloading,paused): ").strip()
+                    val = read_line("Compound  (q=name  cat=cat  tag=expr  hash=abc  status=grp  space-separated  blank=clear): ").strip()
                     if val: filters = parse_filter_line(val, filters)
                     tty.setraw(fd); have_full_draw = False; continue
                 if key == "f":
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                    # This will be replaced by a multi-select prompt later
                     all_status_groups = sorted(STATUS_FILTER_MAP.keys())
                     all_api_terms = sorted(API_TERM_MAP.keys())
                     all_status_codes = sorted(list(set(m["code"].lower() for m in STATUS_MAPPING)))
-                    
                     current_status_filter_values = []
                     for f in filters:
                         if f["type"] == "status" and f.get("enabled", True):
                             current_status_filter_values.extend(f["values"])
-                    
-                    # For now, a simple prompt. Will be replaced by multi-select TUI.
-                    tui_print("\nAvailable Status Groups: " + ", ".join(all_status_groups))
-                    tui_print("Available Status Codes: " + ", ".join(all_status_codes))
-                    val = read_line(f"Filter by Status (e.g. downloading,paused,SD). Current: {', '.join(current_status_filter_values) if current_status_filter_values else 'None'}: ").strip()
-                    
+                    _cur = ", ".join(current_status_filter_values) if current_status_filter_values else "none"
+                    val = read_line(
+                        f"Status  (downloading  seeding  paused  completed  error  checking  all"
+                        f"  comma-list  !term=exclude  blank=clear)  current={_cur}: "
+                    ).strip()
                     filters = [f for f in filters if f.get("type") != "status"]
                     if val:
                         negate = False
@@ -3669,7 +3687,6 @@ def main() -> int:
                             negate = True
                             val = val[1:]
                         statuses = [s.strip().lower() for s in val.split(",") if s.strip()]
-                        # Filter out any invalid status terms (groups, api terms, or codes)
                         valid_terms = set(all_status_groups) | set(all_api_terms) | set(all_status_codes)
                         statuses = [s for s in statuses if s in valid_terms]
                         if statuses:
