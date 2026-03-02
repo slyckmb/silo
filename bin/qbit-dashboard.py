@@ -1028,10 +1028,11 @@ def draw_header_full_compact(
         f"{colors.FG_SECONDARY}Pg:{page + 1}/{total_pages}{colors.RESET}  "
         f"{colors.FG_SECONDARY}Filters:{active_filters}{colors.RESET}"
     )
-    lines = [short(line1), short(line2), short(line3)]
+    # Cache line sits directly under the server/title line (position 2)
+    lines = [short(line1)]
     if cache_info is not None:
         lines.append(short(_fmt_cache_status_line(cache_info, colors)))
-    lines.append("-" * width)
+    lines.extend([short(line2), short(line3), "-" * width])
     return lines
 
 
@@ -1146,6 +1147,11 @@ def draw_header_v2(
 
     lines.append(f"┌{'─' * (width - 2)}┐")
     lines.append(f"│ {title_line} │")
+    # Cache status line directly under title, before the stats separator
+    if cache_info is not None:
+        _cl = _fmt_cache_status_line(cache_info, colors)
+        _cl_pad = max(0, (width - 4) - visible_len(_cl))
+        lines.append(f"│ {_cl}{' ' * _cl_pad} │")
     lines.append(f"├{'─' * (width - 2)}┤")
 
     # Line 2: Stats dashboard
@@ -1198,14 +1204,6 @@ def draw_header_v2(
     if padding_needed > 0:
         stats_line += " " * padding_needed
     lines.append(f"│ {stats_line} │")
-
-    # Cache status row (only when enabled or explicitly provided)
-    if cache_info is not None:
-        cache_line = _fmt_cache_status_line(cache_info, colors)
-        cache_visible = visible_len(cache_line)
-        cache_padding = max(0, (width - 4) - cache_visible)
-        lines.append(f"│ {cache_line}{' ' * cache_padding} │")
-
     lines.append(f"└{'─' * (width - 2)}┘")
 
     return lines
