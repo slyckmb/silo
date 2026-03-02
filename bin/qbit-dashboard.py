@@ -34,8 +34,8 @@ except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 SCRIPT_NAME = "qbit-dashboard"
-VERSION = "1.12.0"
-LAST_UPDATED = "2026-03-01"
+VERSION = "1.12.1"
+LAST_UPDATED = "2026-03-02"
 FULL_TUI_MIN_WIDTH = 120
 
 # ============================================================================
@@ -940,6 +940,37 @@ def summary(torrents: list[dict]) -> str:
     return " ".join([f"{k}:{v}" for k, v in counts.items()])
 
 
+def _fmt_cache_status_line(cache_info: dict, colors: ColorScheme) -> str:
+    """Compact one-line cache status for the header."""
+    if not cache_info.get("enabled"):
+        return f"{colors.FG_TERTIARY}Cache: OFF (direct API){colors.RESET}"
+    dot = f"{colors.GREEN}●{colors.RESET}" if cache_info.get("daemon_running") else f"{colors.ERROR}○{colors.RESET}"
+    path_short = str(cache_info.get("base_path", "")).replace(str(Path.home()), "~")
+    interval = cache_info.get("interval_s")
+    interval_str = f"{float(interval):.0f}s" if interval is not None else "?"
+    hits = cache_info.get("cache_hits", 0)
+    direct = cache_info.get("direct_hits", 0)
+    total = hits + direct
+    hit_pct = f"{(hits / total * 100):.0f}%" if total > 0 else "--"
+    age = cache_info.get("cache_age_s")
+    age_str = f"age {float(age):.1f}s" if age is not None else "age ?"
+    items = cache_info.get("items")
+    items_str = f"  {colors.FG_TERTIARY}{items} items{colors.RESET}" if items is not None else ""
+    err = str(cache_info.get("last_error") or "")
+    err_str = f"  {colors.ERROR}err:{err[:25]}{colors.RESET}" if err else ""
+    leases = cache_info.get("active_leases", 0)
+    leases_str = f"  {colors.FG_TERTIARY}{leases}L{colors.RESET}"
+    return (
+        f"{colors.FG_SECONDARY}Cache:{colors.RESET} {dot} {colors.FG_TERTIARY}{path_short}{colors.RESET}"
+        f"  {colors.FG_SECONDARY}every {colors.YELLOW}{interval_str}{colors.RESET}"
+        f"  {colors.FG_SECONDARY}↑cache {colors.CYAN}{hits}{colors.RESET}"
+        f"  {colors.FG_SECONDARY}↓qbit {colors.BLUE}{direct}{colors.RESET}"
+        f"  {colors.FG_SECONDARY}hit {colors.GREEN}{hit_pct}{colors.RESET}"
+        f"  {colors.FG_TERTIARY}{age_str}{colors.RESET}"
+        f"{items_str}{leases_str}{err_str}"
+    )
+
+
 def draw_header_full_compact(
     colors: ColorScheme,
     api_url: str,
@@ -952,6 +983,7 @@ def draw_header_full_compact(
     total_pages: int,
     filters: list[dict],
     width: int,
+    cache_info: dict | None = None,
 ) -> list[str]:
     def short(value: str) -> str:
         return truncate(value, width)
@@ -996,7 +1028,11 @@ def draw_header_full_compact(
         f"{colors.FG_SECONDARY}Pg:{page + 1}/{total_pages}{colors.RESET}  "
         f"{colors.FG_SECONDARY}Filters:{active_filters}{colors.RESET}"
     )
-    return [short(line1), short(line2), short(line3), "-" * width]
+    lines = [short(line1), short(line2), short(line3)]
+    if cache_info is not None:
+        lines.append(short(_fmt_cache_status_line(cache_info, colors)))
+    lines.append("-" * width)
+    return lines
 
 
 def draw_footer_full_compact(
@@ -1009,17 +1045,32 @@ def draw_footer_full_compact(
         return truncate(value, width)
 
     if has_selection:
-        actions = "P pause  V verify  C category  E tags  T trackers  Q qc  D delete"
+        actions = (
+            f"{colors.CYAN_BOLD}P{colors.RESET}{colors.FG_SECONDARY}=Pause  "
+            f"{colors.CYAN_BOLD}V{colors.RESET}{colors.FG_SECONDARY}=Verify  "
+            f"{colors.CYAN_BOLD}C{colors.RESET}{colors.FG_SECONDARY}=Cat  "
+            f"{colors.CYAN_BOLD}E{colors.RESET}{colors.FG_SECONDARY}=Tags  "
+            f"{colors.CYAN_BOLD}T{colors.RESET}{colors.FG_SECONDARY}=Trackers  "
+            f"{colors.CYAN_BOLD}Q{colors.RESET}{colors.FG_SECONDARY}=QC  "
+            f"{colors.ORANGE_BOLD}D{colors.RESET}{colors.FG_SECONDARY}=Delete  "
+            f"{colors.CYAN_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=Content tabs{colors.RESET}"
+        )
     else:
-        actions = "(Select torrent for actions)"
+        actions = f"{colors.FG_TERTIARY}{colors.DIM}(select a torrent to enable actions){colors.RESET}"
     line1 = f"{colors.FG_SECONDARY}Actions:{colors.RESET} {actions}"
     line2 = (
-        f"{colors.FG_SECONDARY}Nav:{colors.RESET} ↑/↓ move  PgUp/Dn page  Space select  Enter details  Tab tabs  "
-        f"{colors.FG_SECONDARY}View:{colors.RESET} ? help  q quit"
+        f"{colors.FG_SECONDARY}Nav:{colors.RESET} "
+        f"{colors.YELLOW_BOLD}Space{colors.RESET}{colors.FG_SECONDARY}=toggle-select  "
+        f"{colors.YELLOW_BOLD}↑↓ '/{colors.RESET}{colors.FG_SECONDARY}=move  "
+        f"{colors.YELLOW_BOLD},.{colors.RESET}{colors.FG_SECONDARY}=page  "
+        f"{colors.BLUE_BOLD}Enter{colors.RESET}{colors.FG_SECONDARY}=details  "
+        f"{colors.PURPLE_BOLD}?{colors.RESET}{colors.FG_SECONDARY}=help  "
+        f"{colors.PURPLE_BOLD}i{colors.RESET}{colors.FG_SECONDARY}=cache  "
+        f"{colors.PURPLE_BOLD}q{colors.RESET}{colors.FG_SECONDARY}=quit{colors.RESET}"
     )
     lines = ["-" * width, short(line1), short(line2)]
     if macros:
-        items = [f"{idx}:{m.get('desc','')[:12]}" for idx, m in enumerate(macros[:9], start=1)]
+        items = [f"{idx}:{m.get('desc','')[:10]}" for idx, m in enumerate(macros[:9], start=1)]
         line3 = (
             f"{colors.FG_SECONDARY}Macros:{colors.RESET} " +
             "  ".join(items) +
@@ -1044,7 +1095,8 @@ def draw_header_v2(
     page: int,
     total_pages: int,
     filters: list[dict],
-    width: int
+    width: int,
+    cache_info: dict | None = None,
 ) -> list[str]:
     """
     Render professional 3-line header.
@@ -1146,6 +1198,14 @@ def draw_header_v2(
     if padding_needed > 0:
         stats_line += " " * padding_needed
     lines.append(f"│ {stats_line} │")
+
+    # Cache status row (only when enabled or explicitly provided)
+    if cache_info is not None:
+        cache_line = _fmt_cache_status_line(cache_info, colors)
+        cache_visible = visible_len(cache_line)
+        cache_padding = max(0, (width - 4) - cache_visible)
+        lines.append(f"│ {cache_line}{' ' * cache_padding} │")
+
     lines.append(f"└{'─' * (width - 2)}┘")
 
     return lines
@@ -1196,71 +1256,97 @@ def draw_footer_v2(
     lines.append(f"┌{'─' * (width - 2)}┐")
 
     if context == "main":
-        # Line 1: Actions
-        actions = []
-
+        # ── Line 1: ACTIONS ──────────────────────────────────────────────────
+        # Keys requiring a selection: dim when idle, bright when active.
         if has_selection:
-            actions.extend([
-                f"{colors.CYAN_BOLD}P{colors.RESET}{colors.FG_SECONDARY}=Pause{colors.RESET}",
-                f"{colors.CYAN_BOLD}V{colors.RESET}{colors.FG_SECONDARY}=Verify{colors.RESET}",
-                f"{colors.CYAN_BOLD}C{colors.RESET}{colors.FG_SECONDARY}=Category{colors.RESET}",
-                f"{colors.CYAN_BOLD}E{colors.RESET}{colors.FG_SECONDARY}=Tags{colors.RESET}",
-                f"{colors.CYAN_BOLD}T{colors.RESET}{colors.FG_SECONDARY}=Trackers{colors.RESET}",
-                f"{colors.CYAN_BOLD}Q{colors.RESET}{colors.FG_SECONDARY}=QC{colors.RESET}",
-                f"{colors.ORANGE_BOLD}D{colors.RESET}{colors.FG_SECONDARY}=Delete{colors.RESET}",
-            ])
+            # Active: bright key + secondary label
+            _k = colors.CYAN_BOLD
+            _l = colors.FG_SECONDARY
+            _del_k = colors.ORANGE_BOLD
+            _tab_k = colors.CYAN_BOLD
         else:
-            actions.append(f"{colors.FG_TERTIARY}{colors.DIM}(Select torrent for actions){colors.RESET}")
+            # Idle: everything muted
+            _k = colors.FG_TERTIARY + colors.DIM
+            _l = colors.FG_TERTIARY + colors.DIM
+            _del_k = colors.FG_TERTIARY + colors.DIM
+            _tab_k = colors.FG_TERTIARY + colors.DIM
 
-        actions_line = f"{colors.FG_SECONDARY}ACTIONS:{colors.RESET} " + "  ".join(actions)
+        def _act(key: str, label: str, key_color: str = _k) -> str:
+            return f"{key_color}{key}{colors.RESET}{_l}={label}{colors.RESET}"
 
-        # Line 2: Navigation and View
-        nav_parts = [
-            f"{colors.YELLOW_BOLD}↑/↓{colors.RESET}{colors.FG_SECONDARY}=Move{colors.RESET}",
-            f"{colors.YELLOW_BOLD}PgUp/Dn{colors.RESET}{colors.FG_SECONDARY}=Page{colors.RESET}",
-            f"{colors.YELLOW_BOLD}Space{colors.RESET}{colors.FG_SECONDARY}=Select{colors.RESET}",
-            f"{colors.BLUE_BOLD}Enter{colors.RESET}{colors.FG_SECONDARY}=Details{colors.RESET}",
-            f"{colors.YELLOW_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=Tabs{colors.RESET}",
+        actions_parts = [
+            _act("P", "Pause"),
+            _act("V", "Verify"),
+            _act("C", "Category"),
+            _act("E", "Tags"),
+            _act("T", "Trackers"),
+            _act("Q", "QC"),
+            _act("D", "Delete", _del_k),
+            _act("Tab", "Content tabs", _tab_k),
         ]
-
-        view_parts = [
-            f"{colors.PURPLE_BOLD}?{colors.RESET}{colors.FG_SECONDARY}=Help{colors.RESET}",
-            f"{colors.PURPLE_BOLD}q{colors.RESET}{colors.FG_SECONDARY}=Quit{colors.RESET}",
-        ]
-
-        nav_line = (
-            f"{colors.FG_SECONDARY}NAVIGATE:{colors.RESET} " +
-            "  ".join(nav_parts) +
-            f"  {colors.FG_SECONDARY}│ VIEW:{colors.RESET} " +
-            "  ".join(view_parts)
+        if not has_selection:
+            actions_hint = f"  {colors.FG_TERTIARY + colors.DIM}← select a torrent first{colors.RESET}"
+        else:
+            actions_hint = ""
+        actions_line = (
+            f"{colors.FG_SECONDARY}ACTIONS:{colors.RESET}  " +
+            "  ".join(actions_parts) +
+            actions_hint
         )
 
-        # Add macros line if macros exist
+        # ── Line 2: NAVIGATE ─────────────────────────────────────────────────
+        nav_parts = [
+            f"{colors.YELLOW_BOLD}Space{colors.RESET}{colors.FG_SECONDARY}=toggle-select{colors.RESET}",
+            f"{colors.YELLOW_BOLD}↑↓ '/{colors.RESET}{colors.FG_SECONDARY}=move{colors.RESET}",
+            f"{colors.YELLOW_BOLD},.{colors.RESET}{colors.FG_SECONDARY}=page{colors.RESET}",
+            f"{colors.BLUE_BOLD}Enter{colors.RESET}{colors.FG_SECONDARY}=details{colors.RESET}",
+            f"{colors.PURPLE_BOLD}~{colors.RESET}{colors.FG_SECONDARY}=back/clear{colors.RESET}",
+        ]
+        global_parts = [
+            f"{colors.PURPLE_BOLD}?{colors.RESET}{colors.FG_SECONDARY}=help{colors.RESET}",
+            f"{colors.PURPLE_BOLD}i{colors.RESET}{colors.FG_SECONDARY}=cache{colors.RESET}",
+            f"{colors.PURPLE_BOLD}q{colors.RESET}{colors.FG_SECONDARY}=quit{colors.RESET}",
+        ]
+        nav_line = (
+            f"{colors.FG_SECONDARY}NAV:{colors.RESET}  " +
+            "  ".join(nav_parts) +
+            f"  {colors.FG_SECONDARY}│{colors.RESET}  " +
+            "  ".join(global_parts)
+        )
+
+        # ── Line 3: KEYS (no-selection required) ─────────────────────────────
+        def _k2(key: str, label: str) -> str:
+            return f"{colors.FG_TERTIARY}{key}{colors.RESET}{colors.FG_TERTIARY}={label}{colors.RESET}"
+
+        keys_parts = [
+            f"{colors.FG_SECONDARY}Scope:{colors.RESET}",
+            _k2("a", "All"), _k2("w", "↓"), _k2("u", "↑"), _k2("v", "Pause"), _k2("e", "Done"), _k2("g", "Err"),
+            f"  {colors.FG_SECONDARY}Sort:{colors.RESET}",
+            _k2("s", "field"), _k2("o", "dir"),
+            f"  {colors.FG_SECONDARY}Filter:{colors.RESET}",
+            _k2("f", "status"), _k2("c", "cat"), _k2("#", "tag"), _k2("l", "text"), _k2("x", "toggle"), _k2("p", "preset"),
+            f"  {colors.FG_SECONDARY}View:{colors.RESET}",
+            _k2("t", "tags"), _k2("d", "date"), _k2("h", "hash"), _k2("n", "narrow"), _k2("m", "media"), _k2("z", "reset"),
+        ]
+        keys_line = " ".join(keys_parts)
+
+        # ── Macros ────────────────────────────────────────────────────────────
+        all_lines = [actions_line, nav_line, keys_line]
         if macros:
-            macro_items = []
-            for idx, macro in enumerate(macros[:9], start=1):  # Limit to 9
-                # Truncate description if too long
-                desc = macro["desc"][:12]
-                macro_items.append(f"{idx}:{desc}")
+            macro_items = [
+                f"{idx}:{macro['desc'][:10]}"
+                for idx, macro in enumerate(macros[:9], start=1)
+            ]
+            macro_line = (
+                f"{colors.FG_SECONDARY}MACROS:{colors.RESET} " +
+                "  ".join(macro_items) +
+                f"  {colors.FG_TERTIARY}[M menu, Shift+# direct]{colors.RESET}"
+            )
+            all_lines.append(macro_line)
 
-            macro_str = "  ".join(macro_items)
-            macro_label = f"{colors.FG_SECONDARY}MACROS:{colors.RESET}"
-            macro_hint = f"{colors.FG_TERTIARY}[M menu, Shift+# direct]{colors.RESET}"
-            macro_line = f"{macro_label} {macro_str}  {macro_hint}"
-
-            # Append all three lines
-            padding1 = max(0, width - visible_len(actions_line) - 4)
-            padding2 = max(0, width - visible_len(nav_line) - 4)
-            padding3 = max(0, width - visible_len(macro_line) - 4)
-            lines.append(f"│ {actions_line}{' ' * padding1} │")
-            lines.append(f"│ {nav_line}{' ' * padding2} │")
-            lines.append(f"│ {macro_line}{' ' * padding3} │")
-        else:
-            # No macros - original two-line footer
-            padding1 = max(0, width - visible_len(actions_line) - 4)
-            padding2 = max(0, width - visible_len(nav_line) - 4)
-            lines.append(f"│ {actions_line}{' ' * padding1} │")
-            lines.append(f"│ {nav_line}{' ' * padding2} │")
+        for ln in all_lines:
+            pad = max(0, width - visible_len(ln) - 4)
+            lines.append(f"│ {ln}{' ' * pad} │")
 
     elif context == "trackers":
         title_line = f"{colors.CYAN_BOLD}TRACKER VIEW{colors.RESET}"
@@ -2270,6 +2356,7 @@ def main() -> int:
     parser.add_argument("--cache-allow-stale", action=argparse.BooleanOptionalAction, default=True, help="Allow stale cache fallback (default: true).")
     parser.add_argument("--cache-agent-cmd", type=Path, default=Path(__file__).with_name("qbit-cache-agent.py"), help="Path to qbit-cache-agent.py (default: bin/qbit-cache-agent.py alongside this script).")
     parser.add_argument("--cache-status", action="store_true", help="Print cache/daemon status JSON and exit (requires --use-shared-cache).")
+    parser.add_argument("--cache-base-dir", type=Path, default=Path.home() / ".cache" / "qbitui", help="Shared cache base directory (default: ~/.cache/qbitui).")
     parser.add_argument("--mediainfo-cache-dir", type=Path, default=None, help="Override mediainfo cache directory (default: ~/.logs/media_qc/cache/mediainfo, or QBIT_MEDIAINFO_CACHE_DIR env).")
     args = parser.parse_args()
 
@@ -2414,6 +2501,14 @@ def main() -> int:
     cached_rows: list[dict] = []
     cache_time = 0.0
     fetch_interval = 2.0
+    # Cache hit tracking (this session)
+    cache_hit_count = 0    # requests served from shared cache daemon
+    direct_hit_count = 0   # requests served directly from qbit API
+    # Daemon meta file for header stats
+    _cache_base = Path(args.cache_base_dir).expanduser()
+    cache_meta_file = _cache_base / "torrents-info.meta.json"
+    cache_meta: dict = {}
+    last_meta_read = 0.0
     list_start_row = 0
     list_block_height = 0
     have_full_draw = False
@@ -2872,6 +2967,14 @@ def main() -> int:
             now = time.monotonic()
             data_changed = False
             refresh_macros_if_changed()
+            # Periodically refresh daemon meta file for header stats
+            if args.use_shared_cache and (now - last_meta_read) >= 4.0:
+                try:
+                    _mt = cache_meta_file.read_text("utf-8") if cache_meta_file.exists() else ""
+                    cache_meta = json.loads(_mt) if _mt else {}
+                except Exception:
+                    pass
+                last_meta_read = now
             current_term_w = terminal_width_raw() if narrow_mode and not in_tab_view else terminal_width()
             if narrow_mode_auto and not in_tab_view:
                 auto_narrow = current_term_w < FULL_TUI_MIN_WIDTH
@@ -2900,11 +3003,14 @@ def main() -> int:
                     )
                     if _agent_result.returncode == 0 and _agent_result.stdout.strip():
                         raw = _agent_result.stdout
+                        cache_hit_count += 1
                     else:
                         set_banner("Cache agent failed; falling back to direct API")
                         raw = qbit_request(opener, api_url, "GET", "/api/v2/torrents/info")
+                        direct_hit_count += 1
                 else:
                     raw = qbit_request(opener, api_url, "GET", "/api/v2/torrents/info")
+                    direct_hit_count += 1
                 if raw.startswith("Error:") or raw.startswith("HTTP "):
                     set_banner(f"Network error: {raw}")
                     cache_time = now
@@ -2967,6 +3073,31 @@ def main() -> int:
                 need_redraw = True
                 NEED_RESIZE = False
 
+            # Build cache_info for header display
+            _now_wall = time.time()
+            _fetched_at = cache_meta.get("fetched_at")
+            _cache_age: float | None = None
+            if _fetched_at is not None:
+                try:
+                    _cache_age = max(0.0, _now_wall - float(_fetched_at))
+                except Exception:
+                    pass
+            _pid_val = cache_meta.get("daemon_pid")
+            _daemon_alive = bool(_pid_val and cache_meta.get("source") not in ("daemon_idle_exit",))
+            _total_hits = cache_hit_count + direct_hit_count
+            cache_info = {
+                "enabled": args.use_shared_cache,
+                "base_path": str(_cache_base),
+                "interval_s": cache_meta.get("effective_interval_s"),
+                "cache_hits": cache_hit_count,
+                "direct_hits": direct_hit_count,
+                "daemon_running": _daemon_alive,
+                "cache_age_s": _cache_age,
+                "items": cache_meta.get("items"),
+                "last_error": cache_meta.get("last_error", ""),
+                "active_leases": cache_meta.get("active_leases", 0),
+            }
+
             if data_changed or need_redraw:
                 term_w = current_term_w
                 banner_line = ""
@@ -3007,7 +3138,8 @@ def main() -> int:
                         page=page,
                         total_pages=total_pages,
                         filters=filters,
-                        width=tab_display_width
+                        width=tab_display_width,
+                        cache_info=cache_info,
                     )
                     for line in header_lines:
                         tui_print(line)
@@ -3082,7 +3214,8 @@ def main() -> int:
                                 page=page,
                                 total_pages=total_pages,
                                 filters=filters,
-                                width=content_width
+                                width=content_width,
+                                cache_info=cache_info,
                             )
                         for line in header_lines:
                             tui_print(line)
@@ -3177,12 +3310,13 @@ def main() -> int:
                     help_lines = []
                     help_lines.append(f"{colors.CYAN_BOLD}QBITUI HELP{colors.RESET}")
                     help_lines.append("")
-                    help_lines.append(f"{colors.YELLOW}Navigation:{colors.RESET} ↑/↓ (or ' /) move cursor, , . page prev/next, Space select, Enter details")
-                    help_lines.append(f"{colors.YELLOW}Filters:{colors.RESET}    f status, c category, # tag, l line filter (text, hash, etc), x toggle filters")
-                    help_lines.append(f"{colors.YELLOW}Scope:{colors.RESET}      a all, w down, u up, v paused, e completed, g error")
-                    help_lines.append(f"{colors.YELLOW}Sort:{colors.RESET}       s cycle field, o toggle asc/desc")
-                    help_lines.append(f"{colors.YELLOW}View:{colors.RESET}       Tab/Shift-Tab cycle tabs, z reset, t tags, d date, h hash, n narrow, m media, X clear cache")
-                    help_lines.append(f"{colors.YELLOW}Actions:{colors.RESET}    (Selection required) P pause/resume, D delete, C category, E tags, T trackers, Q qc, M macros")
+                    help_lines.append(f"{colors.YELLOW}Navigation:{colors.RESET}  ↑/↓ or '/  move cursor  │  , .  page prev/next  │  Space  toggle-select  │  Enter  details  │  ~  back/clear")
+                    help_lines.append(f"{colors.YELLOW}Scope:{colors.RESET}       a=All  w=Downloading  u=Uploading  v=Paused  e=Completed  g=Error")
+                    help_lines.append(f"{colors.YELLOW}Sort:{colors.RESET}        s=cycle field  o=toggle asc/desc")
+                    help_lines.append(f"{colors.YELLOW}Filter:{colors.RESET}      f=status  c=category  #=tag  l=line filter (text, hash…)  x=toggle  p=presets")
+                    help_lines.append(f"{colors.YELLOW}View:{colors.RESET}        Tab/Shift-Tab=content tabs  z=reset  t=tags  d=date  h=hash  n=narrow  m=media  X=clear MI cache")
+                    help_lines.append(f"{colors.YELLOW}Global:{colors.RESET}      ?=help  i=cache status  q=quit  Ctrl-Q=quit")
+                    help_lines.append(f"{colors.YELLOW}Actions:{colors.RESET}     (select a torrent first)  P=Pause/Resume  D=Delete  C=Category  E=Tags  T=Trackers  Q=QC  M=Macros")
                     
                     help_lines.append(f"\n{colors.CYAN_BOLD}STATUS MAPPING TABLE{colors.RESET}")
                     help_lines.append(f"{'Code':<5} {'API Term':<20} {'Group/Description':<30}")
@@ -3254,6 +3388,151 @@ def main() -> int:
                         
                         if exit_help: break
 
+                    have_full_draw = False
+                    continue
+                if key == "i":
+                    # ── Cache Status Popup ──────────────────────────────────
+                    # Fetch live status via cache agent --status
+                    _ci = cache_info  # from last loop iteration
+                    _cs_lines = []
+                    _cs_lines.append(f"{colors.CYAN_BOLD}CACHE STATUS{colors.RESET}")
+                    _cs_lines.append("")
+                    if not _ci.get("enabled"):
+                        _cs_lines.append(f"{colors.FG_TERTIARY}Shared cache: OFF  (using direct qbit API){colors.RESET}")
+                    else:
+                        _dot = f"{colors.GREEN}●{colors.RESET}" if _ci.get("daemon_running") else f"{colors.ERROR}○{colors.RESET}"
+                        _path = str(_ci.get("base_path", "")).replace(str(Path.home()), "~")
+                        _cs_lines.append(
+                            f"{colors.FG_SECONDARY}Daemon:{colors.RESET}  {_dot}  "
+                            f"{colors.FG_SECONDARY}Path:{colors.RESET} {colors.BLUE}{_path}{colors.RESET}"
+                        )
+                        _interval = _ci.get("interval_s")
+                        _interval_s = f"{float(_interval):.1f}s" if _interval is not None else "unknown"
+                        _items = _ci.get("items")
+                        _items_s = str(_items) if _items is not None else "unknown"
+                        _leases = _ci.get("active_leases", 0)
+                        _age = _ci.get("cache_age_s")
+                        _age_s = f"{float(_age):.1f}s" if _age is not None else "unknown"
+                        _cs_lines.append(
+                            f"{colors.FG_SECONDARY}Cache:{colors.RESET}   "
+                            f"age {colors.YELLOW}{_age_s}{colors.RESET}  "
+                            f"refresh every {colors.YELLOW}{_interval_s}{colors.RESET}  "
+                            f"items {colors.CYAN}{_items_s}{colors.RESET}  "
+                            f"leases {colors.FG_SECONDARY}{_leases}{colors.RESET}"
+                        )
+                        _hits = _ci.get("cache_hits", 0)
+                        _direct = _ci.get("direct_hits", 0)
+                        _total = _hits + _direct
+                        _pct = f"{(_hits / _total * 100):.0f}%" if _total > 0 else "--"
+                        _cs_lines.append("")
+                        _cs_lines.append(f"{colors.FG_SECONDARY}Session request stats:{colors.RESET}")
+                        _cs_lines.append(
+                            f"  {colors.CYAN}↑ from cache{colors.RESET}  {colors.CYAN_BOLD}{_hits}{colors.RESET} reqs"
+                            f"   {colors.BLUE}↓ direct qbit{colors.RESET}  {colors.BLUE_BOLD}{_direct}{colors.RESET} reqs"
+                            f"   hit rate {colors.GREEN_BOLD}{_pct}{colors.RESET}"
+                        )
+                        _last_err = str(_ci.get("last_error") or "")
+                        _cs_lines.append("")
+                        if _last_err:
+                            _cs_lines.append(f"{colors.FG_SECONDARY}Last error:{colors.RESET}  {colors.ERROR}{_last_err}{colors.RESET}")
+                        else:
+                            _cs_lines.append(f"{colors.FG_SECONDARY}Last error:{colors.RESET}  {colors.FG_TERTIARY}none{colors.RESET}")
+                        # Live status from agent
+                        _cs_lines.append("")
+                        _cs_lines.append(f"{colors.FG_TERTIARY}Fetching live daemon status…{colors.RESET}")
+                    _cs_lines.append("")
+                    _cs_lines.append(f"{colors.FG_TERTIARY}[any key] dismiss{colors.RESET}")
+
+                    # Render the popup (same pattern as help overlay)
+                    _cols, _rows = shutil.get_terminal_size()
+                    _frame = "\033[H\033[2J"
+                    for _ln in _cs_lines:
+                        _frame += _ln + "\r\n"
+                    sys.stdout.write(_frame)
+                    sys.stdout.flush()
+
+                    # If cache enabled, fetch live status in background and re-render
+                    if _ci.get("enabled"):
+                        _cache_env = {**os.environ, "QBIT_URL": api_url, "QBIT_USER": username, "QBIT_PASS": password}
+                        try:
+                            _status_result = subprocess.run(
+                                [sys.executable, str(args.cache_agent_cmd), "--status"],
+                                env=_cache_env,
+                                capture_output=True,
+                                text=True,
+                                timeout=5,
+                            )
+                            if _status_result.returncode == 0 and _status_result.stdout.strip():
+                                try:
+                                    _sd = json.loads(_status_result.stdout)
+                                    # Rebuild lines with live data
+                                    _cs_lines2 = []
+                                    _cs_lines2.append(f"{colors.CYAN_BOLD}CACHE STATUS  (live){colors.RESET}")
+                                    _cs_lines2.append("")
+                                    _d_running = _sd.get("daemon_running", False)
+                                    _d_pid = _sd.get("daemon_pid", 0)
+                                    _ddot = f"{colors.GREEN}●{colors.RESET}" if _d_running else f"{colors.ERROR}○{colors.RESET}"
+                                    _dpid_s = f"pid {_d_pid}" if _d_pid else "not running"
+                                    _dpath = str(_sd.get("cache_file", "")).replace(str(Path.home()), "~")
+                                    _cs_lines2.append(
+                                        f"{colors.FG_SECONDARY}Daemon:{colors.RESET}  {_ddot} {_dpid_s}  "
+                                        f"{colors.FG_SECONDARY}File:{colors.RESET} {colors.BLUE}{_dpath}{colors.RESET}"
+                                    )
+                                    _cage = _sd.get("cache_age_s")
+                                    _cage_s = f"{float(_cage):.1f}s" if _cage is not None else "unknown"
+                                    _meta = _sd.get("meta", {})
+                                    _eff = _meta.get("effective_interval_s")
+                                    _eff_s = f"{float(_eff):.1f}s" if _eff is not None else "unknown"
+                                    _mitems = _meta.get("items")
+                                    _mitems_s = str(_mitems) if _mitems is not None else "unknown"
+                                    _al = _sd.get("active_lease_count", 0)
+                                    _cs_lines2.append(
+                                        f"{colors.FG_SECONDARY}Cache:{colors.RESET}   "
+                                        f"age {colors.YELLOW}{_cage_s}{colors.RESET}  "
+                                        f"refresh every {colors.YELLOW}{_eff_s}{colors.RESET}  "
+                                        f"items {colors.CYAN}{_mitems_s}{colors.RESET}  "
+                                        f"active leases {colors.FG_SECONDARY}{_al}{colors.RESET}"
+                                    )
+                                    _al_list = _sd.get("active_leases", [])
+                                    if _al_list:
+                                        _cs_lines2.append("")
+                                        _cs_lines2.append(f"{colors.FG_SECONDARY}Active leases:{colors.RESET}")
+                                        for _lease in _al_list[:6]:
+                                            _lcid = _lease.get("client_id", "?")
+                                            _lint = _lease.get("requested_interval_s", "?")
+                                            _cs_lines2.append(f"  {colors.FG_TERTIARY}{_lcid}  interval {_lint}s{colors.RESET}")
+                                    _cs_lines2.append("")
+                                    _cs_lines2.append(f"{colors.FG_SECONDARY}Session request stats:{colors.RESET}")
+                                    _hits2 = _ci.get("cache_hits", 0)
+                                    _direct2 = _ci.get("direct_hits", 0)
+                                    _total2 = _hits2 + _direct2
+                                    _pct2 = f"{(_hits2 / _total2 * 100):.0f}%" if _total2 > 0 else "--"
+                                    _cs_lines2.append(
+                                        f"  {colors.CYAN}↑ from cache{colors.RESET}  {colors.CYAN_BOLD}{_hits2}{colors.RESET}"
+                                        f"   {colors.BLUE}↓ direct qbit{colors.RESET}  {colors.BLUE_BOLD}{_direct2}{colors.RESET}"
+                                        f"   hit rate {colors.GREEN_BOLD}{_pct2}{colors.RESET}"
+                                    )
+                                    _lerr = str(_meta.get("last_error") or "")
+                                    _cs_lines2.append("")
+                                    if _lerr:
+                                        _cs_lines2.append(f"{colors.FG_SECONDARY}Last error:{colors.RESET}  {colors.ERROR}{_lerr}{colors.RESET}")
+                                    else:
+                                        _cs_lines2.append(f"{colors.FG_SECONDARY}Last error:{colors.RESET}  {colors.FG_TERTIARY}none{colors.RESET}")
+                                    _cs_lines2.append("")
+                                    _cs_lines2.append(f"{colors.FG_TERTIARY}[any key] dismiss{colors.RESET}")
+                                    _frame2 = "\033[H\033[2J"
+                                    for _ln2 in _cs_lines2:
+                                        _frame2 += _ln2 + "\r\n"
+                                    sys.stdout.write(_frame2)
+                                    sys.stdout.flush()
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+
+                    # Wait for any key
+                    select.select([sys.stdin], [], [], 30)
+                    read_input_queue()
                     have_full_draw = False
                     continue
                 if key == "`":
