@@ -34,7 +34,7 @@ except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 SCRIPT_NAME = "qbit-dashboard"
-VERSION = "1.12.3"
+VERSION = "1.12.4"
 LAST_UPDATED = "2026-03-02"
 FULL_TUI_MIN_WIDTH = 120
 
@@ -305,10 +305,14 @@ def read_input_queue() -> list[str]:
                 keys.append("'")
             elif seq in ("[B", "OB"):
                 keys.append("/")
+            elif seq in ("[C", "OC"):
+                keys.append(".")   # Right arrow → page next
+            elif seq in ("[D", "OD"):
+                keys.append(",")   # Left arrow → page prev
             elif seq.startswith("[1;5") or seq.startswith("[1;6"):
                 if seq.endswith("I") or seq.endswith("Z"):
                     keys.append("CTRL_TAB")
-            # All other sequences (arrows, etc) are intentionally ignored/swallowed
+            # All other sequences are intentionally ignored/swallowed
         else:
             keys.append(ch)
     return keys
@@ -1032,17 +1036,23 @@ def draw_header_full_compact(
         f"{colors.BLUE}UL MiB/s{colors.RESET} {colors.BLUE_BOLD}{fmt_mib(total_ul)}{colors.RESET}  "
         f"{colors.FG_SECONDARY}Dn:{downloading} Up:{seeding} Pa:{paused} Ok:{completed} Err:{errors}{colors.RESET}"
     )
-    line3 = (
+    _left3 = (
         f"{colors.FG_SECONDARY}Scope:{colors.RESET} {colors.YELLOW_BOLD}{scope_display}{colors.RESET}  "
         f"{colors.FG_SECONDARY}Sort:{colors.RESET} {colors.YELLOW}{sort_field} {sort_arrow}{colors.RESET}  "
-        f"{colors.FG_SECONDARY}Pg:{page + 1}/{total_pages}{colors.RESET}  "
         f"{colors.FG_SECONDARY}Filters:{active_filters}{colors.RESET}"
     )
+    _pg_plain = f"Pg:{page + 1}/{total_pages}"
+    _pg_colored = f"{colors.FG_SECONDARY}{_pg_plain}{colors.RESET}"
+    _pad3 = max(0, width - visible_len(_left3) - len(_pg_plain))
+    line3 = _left3 + " " * _pad3 + _pg_colored
     # Cache line sits directly under the server/title line (position 2)
     lines = [short(line1)]
     if cache_info is not None:
         lines.append(short(_fmt_cache_status_line(cache_info, colors)))
-    lines.extend([short(line2), short(line3), "-" * width])
+    _l2 = short(line2)
+    _l3 = short(line3)
+    sep_width = max(visible_len(l) for l in lines + [_l2, _l3])
+    lines.extend([_l2, _l3, "-" * sep_width])
     return lines
 
 
@@ -1066,35 +1076,45 @@ def draw_footer_full_compact(
             f"{colors.ORANGE_BOLD}D{colors.RESET}{colors.FG_SECONDARY}=Delete  "
             f"{colors.CYAN_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=Content tabs{colors.RESET}"
         )
+        actions_lbl = f"{colors.YELLOW_BOLD}Actions:{colors.RESET}"
     else:
         actions = f"{colors.FG_TERTIARY}{colors.DIM}(select a torrent to enable actions){colors.RESET}"
-    line1 = f"{colors.FG_SECONDARY}Actions:{colors.RESET} {actions}"
+        actions_lbl = f"{colors.FG_TERTIARY}Actions:{colors.RESET}"
+    line1 = f"{actions_lbl} {actions}"
     line2 = (
         f"{colors.FG_SECONDARY}Nav:{colors.RESET} "
         f"{colors.YELLOW_BOLD}Space/Enter{colors.RESET}{colors.FG_SECONDARY}=select  "
         f"{colors.YELLOW_BOLD}↑↓ '/{colors.RESET}{colors.FG_SECONDARY}=move  "
-        f"{colors.YELLOW_BOLD},.{colors.RESET}{colors.FG_SECONDARY}=page  "
-        f"{colors.BLUE_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=open tabs  "
+        f"{colors.YELLOW_BOLD}←→ ,.{colors.RESET}{colors.FG_SECONDARY}=page  "
         f"{colors.PURPLE_BOLD}~{colors.RESET}{colors.FG_SECONDARY}=back/clear  "
         f"{colors.PURPLE_BOLD}?{colors.RESET}{colors.FG_SECONDARY}=help  "
         f"{colors.PURPLE_BOLD}i{colors.RESET}{colors.FG_SECONDARY}=cache  "
         f"{colors.PURPLE_BOLD}q{colors.RESET}{colors.FG_SECONDARY}=quit{colors.RESET}"
     )
-    def _k2(key: str, label: str) -> str:
-        return f"{colors.FG_TERTIARY}{key}{colors.RESET}{colors.FG_TERTIARY}={label}{colors.RESET}"
+    def _k3(key: str, label: str, key_color: str) -> str:
+        return f"{key_color}{key}{colors.RESET}{colors.FG_SECONDARY}={label}{colors.RESET}"
 
+    _sc = colors.CYAN    # scope keys
+    _so = colors.YELLOW  # sort keys
+    _fi = colors.ORANGE  # filter keys
+    _vi = colors.PURPLE  # view keys
     keys_parts = [
         f"{colors.FG_SECONDARY}Keys:{colors.RESET}",
-        _k2("a", "All"), _k2("w", "↓"), _k2("u", "↑"), _k2("v", "Pause"), _k2("e", "Done"), _k2("g", "Err"),
+        _k3("a", "All", _sc), _k3("w", "↓", _sc), _k3("u", "↑", _sc),
+        _k3("v", "Pause", _sc), _k3("e", "Done", _sc), _k3("g", "Err", _sc),
         f" {colors.FG_SECONDARY}│{colors.RESET}",
-        _k2("s", "sort"), _k2("o", "dir"),
+        _k3("s", "sort", _so), _k3("o", "dir", _so),
         f" {colors.FG_SECONDARY}│{colors.RESET}",
-        _k2("f", "status"), _k2("c", "cat"), _k2("#", "tag"), _k2("l", "text"), _k2("x", "toggle"), _k2("p", "preset"),
+        _k3("f", "status", _fi), _k3("c", "cat", _fi), _k3("#", "tag", _fi),
+        _k3("l", "text", _fi), _k3("x", "toggle", _fi), _k3("p", "preset", _fi),
         f" {colors.FG_SECONDARY}│{colors.RESET}",
-        _k2("t", "tags"), _k2("d", "date"), _k2("h", "hash"), _k2("n", "narrow"), _k2("m", "media"), _k2("z", "reset"),
+        _k3("t", "tags", _vi), _k3("d", "date", _vi), _k3("h", "hash", _vi),
+        _k3("n", "narrow", _vi), _k3("m", "media", _vi), _k3("z", "reset", _vi),
     ]
     line3 = " ".join(keys_parts)
-    lines = ["-" * width, short(line1), short(line2), short(line3)]
+    _l1, _l2, _l3 = short(line1), short(line2), short(line3)
+    sep_width = max(visible_len(_l1), visible_len(_l2), visible_len(_l3))
+    lines = ["-" * sep_width, _l1, _l2, _l3]
     if macros:
         items = [f"{idx}:{m.get('desc','')[:10]}" for idx, m in enumerate(macros[:9], start=1)]
         line4 = (
@@ -1308,9 +1328,9 @@ def draw_footer_v2(
             _act("Tab", "Content tabs", _tab_k),
             _act("M", "Macros", _k),
         ]
-        # No hint text — dimming already communicates "not active"
+        _actions_lbl_color = colors.YELLOW_BOLD if has_selection else colors.FG_TERTIARY
         actions_line = (
-            f"{colors.FG_SECONDARY}ACTIONS:{colors.RESET}  " +
+            f"{_actions_lbl_color}ACTIONS:{colors.RESET}  " +
             "  ".join(actions_parts)
         )
 
@@ -1318,8 +1338,7 @@ def draw_footer_v2(
         nav_parts = [
             f"{colors.YELLOW_BOLD}Space/Enter{colors.RESET}{colors.FG_SECONDARY}=select{colors.RESET}",
             f"{colors.YELLOW_BOLD}↑↓ '/{colors.RESET}{colors.FG_SECONDARY}=move{colors.RESET}",
-            f"{colors.YELLOW_BOLD},.{colors.RESET}{colors.FG_SECONDARY}=page{colors.RESET}",
-            f"{colors.BLUE_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=open tabs{colors.RESET}",
+            f"{colors.YELLOW_BOLD}←→ ,.{colors.RESET}{colors.FG_SECONDARY}=page{colors.RESET}",
             f"{colors.PURPLE_BOLD}~{colors.RESET}{colors.FG_SECONDARY}=back/clear{colors.RESET}",
         ]
         global_parts = [
@@ -1335,18 +1354,25 @@ def draw_footer_v2(
         )
 
         # ── Line 3: KEYS (no-selection required) ─────────────────────────────
-        def _k2(key: str, label: str) -> str:
-            return f"{colors.FG_TERTIARY}{key}{colors.RESET}{colors.FG_TERTIARY}={label}{colors.RESET}"
+        def _k2(key: str, label: str, key_color: str = colors.CYAN) -> str:
+            return f"{key_color}{key}{colors.RESET}{colors.FG_SECONDARY}={label}{colors.RESET}"
 
+        _sc = colors.CYAN    # scope keys
+        _so = colors.YELLOW  # sort keys
+        _fi = colors.ORANGE  # filter keys
+        _vi = colors.PURPLE  # view keys
         keys_parts = [
             f"{colors.FG_SECONDARY}Scope:{colors.RESET}",
-            _k2("a", "All"), _k2("w", "↓"), _k2("u", "↑"), _k2("v", "Pause"), _k2("e", "Done"), _k2("g", "Err"),
+            _k2("a", "All", _sc), _k2("w", "↓", _sc), _k2("u", "↑", _sc),
+            _k2("v", "Pause", _sc), _k2("e", "Done", _sc), _k2("g", "Err", _sc),
             f"  {colors.FG_SECONDARY}Sort:{colors.RESET}",
-            _k2("s", "field"), _k2("o", "dir"),
+            _k2("s", "field", _so), _k2("o", "dir", _so),
             f"  {colors.FG_SECONDARY}Filter:{colors.RESET}",
-            _k2("f", "status"), _k2("c", "cat"), _k2("#", "tag"), _k2("l", "text"), _k2("x", "toggle"), _k2("p", "preset"),
+            _k2("f", "status", _fi), _k2("c", "cat", _fi), _k2("#", "tag", _fi),
+            _k2("l", "text", _fi), _k2("x", "toggle", _fi), _k2("p", "preset", _fi),
             f"  {colors.FG_SECONDARY}View:{colors.RESET}",
-            _k2("t", "tags"), _k2("d", "date"), _k2("h", "hash"), _k2("n", "narrow"), _k2("m", "media"), _k2("z", "reset"),
+            _k2("t", "tags", _vi), _k2("d", "date", _vi), _k2("h", "hash", _vi),
+            _k2("n", "narrow", _vi), _k2("m", "media", _vi), _k2("z", "reset", _vi),
         ]
         keys_line = " ".join(keys_parts)
 
@@ -1375,16 +1401,13 @@ def draw_footer_v2(
         lines.append(f"│ {title_line}{' ' * max(0, padding)} │")
 
         actions = [
-            f"{colors.CYAN_BOLD}A{colors.RESET}{colors.FG_SECONDARY}=Add{colors.RESET}",
-            f"{colors.ORANGE_BOLD}D{colors.RESET}{colors.FG_SECONDARY}=Delete{colors.RESET}",
-            f"{colors.CYAN_BOLD}E{colors.RESET}{colors.FG_SECONDARY}=Edit{colors.RESET}",
-            f"{colors.CYAN_BOLD}R{colors.RESET}{colors.FG_SECONDARY}=Refresh{colors.RESET}",
+            f"{colors.CYAN_BOLD}R{colors.RESET}{colors.FG_SECONDARY}=Reannounce{colors.RESET}",
         ]
 
         nav = [
-            f"{colors.YELLOW_BOLD}↑/↓{colors.RESET}{colors.FG_SECONDARY}=Select{colors.RESET}",
-            f"{colors.PURPLE_BOLD}~{colors.RESET}{colors.FG_SECONDARY}=Back{colors.RESET}",
-            f"{colors.PURPLE_BOLD}?{colors.RESET}{colors.FG_SECONDARY}=Help{colors.RESET}",
+            f"{colors.CYAN_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=Next tab{colors.RESET}",
+            f"{colors.CYAN_BOLD}Shift-Tab{colors.RESET}{colors.FG_SECONDARY}=Prev tab{colors.RESET}",
+            f"{colors.FG_SECONDARY}any key{colors.RESET}{colors.FG_TERTIARY}=back{colors.RESET}",
         ]
 
         cmd_line = truncate(
@@ -1401,8 +1424,8 @@ def draw_footer_v2(
 
         actions = [
             f"{colors.CYAN_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=Next{colors.RESET}",
-            f"{colors.PURPLE_BOLD}~{colors.RESET}{colors.FG_SECONDARY}=Back{colors.RESET}",
-            f"{colors.PURPLE_BOLD}?{colors.RESET}{colors.FG_SECONDARY}=Help{colors.RESET}",
+            f"{colors.CYAN_BOLD}Shift-Tab{colors.RESET}{colors.FG_SECONDARY}=Prev{colors.RESET}",
+            f"{colors.FG_SECONDARY}any key{colors.RESET}{colors.FG_TERTIARY}=back{colors.RESET}",
         ]
 
         cmd_line = truncate("  ".join(actions), width - 4)
@@ -1916,6 +1939,12 @@ def confirm_delete(item: dict) -> tuple[bool, bool]:
     if not final_ok:
         return False, False
     return True, delete_files
+
+
+def reannounce_torrent(opener: urllib.request.OpenerDirector, api_url: str, hash_value: str) -> str:
+    """Trigger a tracker reannounce for the given torrent hash."""
+    resp = qbit_request(opener, api_url, "POST", "/api/v2/torrents/reannounce", {"hashes": hash_value})
+    return "OK" if resp in ("Ok.", "") else resp
 
 
 def apply_action(opener: urllib.request.OpenerDirector, api_url: str, action: str, item: dict) -> str:
@@ -3323,6 +3352,24 @@ def main() -> int:
                 last_key_debug = key
                 need_redraw = True
 
+                # ── Tab-view guard: any non-Tab key closes the overlay ────────
+                if in_tab_view and selection_hash:
+                    active_label = tabs[active_tab]
+                    tab_action_keys: set[str] = set()
+                    if active_label == "Trackers":
+                        tab_action_keys = {"R"}
+                    if key not in {"\t", "SHIFT_TAB", "CTRL_TAB"} | tab_action_keys:
+                        in_tab_view = False
+                        have_full_draw = False
+                        continue
+                    # Handle tab-specific action keys
+                    if active_label == "Trackers" and key == "R":
+                        reannounce_torrent(opener, api_url, selection_hash)
+                        set_banner("Reannouncing…")
+                        continue
+                    # \t / SHIFT_TAB / CTRL_TAB fall through to cycle_tabs below
+                # ─────────────────────────────────────────────────────────────
+
                 if key == "\x11": return 0 # Ctrl-Q
                 if key == "X":
                     if CACHE_DIR.exists():
@@ -3591,8 +3638,7 @@ def main() -> int:
                     have_full_draw = False
                     continue
                 if key == "~":
-                    if in_tab_view: in_tab_view = False; have_full_draw = False
-                    elif selection_hash:
+                    if selection_hash:
                         selection_hash = selection_name = None
                         set_banner("Selection cleared.")
                     continue
