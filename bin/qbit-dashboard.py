@@ -1283,15 +1283,12 @@ def draw_footer_v2(
             _act("Q", "QC"),
             _act("D", "Delete", _del_k),
             _act("Tab", "Content tabs", _tab_k),
+            _act("M", "Macros", _k),
         ]
-        if not has_selection:
-            actions_hint = f"  {colors.FG_TERTIARY + colors.DIM}← select a torrent first{colors.RESET}"
-        else:
-            actions_hint = ""
+        # No hint text — dimming already communicates "not active"
         actions_line = (
             f"{colors.FG_SECONDARY}ACTIONS:{colors.RESET}  " +
-            "  ".join(actions_parts) +
-            actions_hint
+            "  ".join(actions_parts)
         )
 
         # ── Line 2: NAVIGATE ─────────────────────────────────────────────────
@@ -1345,8 +1342,9 @@ def draw_footer_v2(
             all_lines.append(macro_line)
 
         for ln in all_lines:
-            pad = max(0, width - visible_len(ln) - 4)
-            lines.append(f"│ {ln}{' ' * pad} │")
+            ln_clipped = truncate(ln, width - 4)
+            pad = max(0, width - visible_len(ln_clipped) - 4)
+            lines.append(f"│ {ln_clipped}{' ' * pad} │")
 
     elif context == "trackers":
         title_line = f"{colors.CYAN_BOLD}TRACKER VIEW{colors.RESET}"
@@ -1366,9 +1364,12 @@ def draw_footer_v2(
             f"{colors.PURPLE_BOLD}?{colors.RESET}{colors.FG_SECONDARY}=Help{colors.RESET}",
         ]
 
-        cmd_line = "  ".join(actions) + f"  {colors.FG_SECONDARY}│{colors.RESET}  " + "  ".join(nav)
-        padding = width - visible_len(cmd_line) - 4
-        lines.append(f"│ {cmd_line}{' ' * max(0, padding)} │")
+        cmd_line = truncate(
+            "  ".join(actions) + f"  {colors.FG_SECONDARY}│{colors.RESET}  " + "  ".join(nav),
+            width - 4,
+        )
+        padding = max(0, width - visible_len(cmd_line) - 4)
+        lines.append(f"│ {cmd_line}{' ' * padding} │")
 
     elif context == "mediainfo":
         title_line = f"{colors.LAVENDER}MEDIAINFO VIEW{colors.RESET}"
@@ -1381,9 +1382,9 @@ def draw_footer_v2(
             f"{colors.PURPLE_BOLD}?{colors.RESET}{colors.FG_SECONDARY}=Help{colors.RESET}",
         ]
 
-        cmd_line = "  ".join(actions)
-        padding = width - visible_len(cmd_line) - 4
-        lines.append(f"│ {cmd_line}{' ' * max(0, padding)} │")
+        cmd_line = truncate("  ".join(actions), width - 4)
+        padding = max(0, width - visible_len(cmd_line) - 4)
+        lines.append(f"│ {cmd_line}{' ' * padding} │")
 
     lines.append(f"└{'─' * (width - 2)}┘")
 
