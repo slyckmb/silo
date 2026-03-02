@@ -34,7 +34,7 @@ except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 SCRIPT_NAME = "qbit-dashboard"
-VERSION = "1.12.6"
+VERSION = "1.12.7"
 LAST_UPDATED = "2026-03-02"
 FULL_TUI_MIN_WIDTH = 120
 
@@ -729,6 +729,17 @@ def truncate(value: str, max_len: int) -> str:
     return value[:raw_pos] + "\x1b[0m~"
 
 
+def truncate_mid(value: str, max_len: int) -> str:
+    """Truncate from the middle, showing beginning and end of long plain strings."""
+    if len(value) <= max_len:
+        return value
+    if max_len <= 4:
+        return value[:max_len - 1] + "~"
+    left_len = (max_len - 1) * 3 // 5   # ~60% left
+    right_len = max_len - 1 - left_len   # ~40% right
+    return value[:left_len] + "~" + value[len(value) - right_len:]
+
+
 CACHE_DIR = Path(os.environ.get("QBIT_MEDIAINFO_CACHE_DIR", "") or (Path.home() / ".logs" / "media_qc" / "cache" / "mediainfo"))
 MI_CACHE_MAX_ITEMS = 1000  # Limit queue to 1000 items to prevent memory leak
 MI_CACHE_MAX_AGE_SECONDS = 86400  # 24 hours
@@ -859,14 +870,46 @@ def mediainfo_table(paths: list[Path]) -> str:
     tool = shutil.which("mediainfo")
     if not tool:
         return "ERROR: mediainfo not found"
+
+    # Raw numeric fields for clean formatting; no embedded units in data
     inform = (
-        "General;%FileName%|%Duration/String3%|%FileSize/String%|%OverallBitRate/String%|"
-        "%Format%|%Width%x%Height%|%FrameRate%|%BitRate/String%|%Channel(s)%|%SamplingRate/String%|%BitRate/String%\\n"
+        "General;%FileName%|%Duration/String3%|%FileSize%|%OverallBitRate%|"
+        "%Format%|%Width%x%Height%|%FrameRate%|%Channel(s)%|%SamplingRate%\n"
     )
-    headers = [
-        "FileName", "Duration", "FileSize", "OverallBitRate", "Format",
-        "WxH", "FrameRate", "VideoBitRate", "Channels", "SamplingRate", "AudioBitRate",
+
+    # (header, unit, fmt_fn, cap, align)  align: "l"=left, "r"=right
+    def _fmt_mib(v: str) -> str:
+        try: return str(int(v.replace(",", "").replace(" ", "")) >> 20)
+        except Exception: return v
+
+    def _fmt_kbps(v: str) -> str:
+        try: return str(int(v.replace(",", "").replace(" ", "")) // 1000)
+        except Exception: return v
+
+    def _fmt_fps(v: str) -> str:
+        try:
+            f = float(v)
+            s = f"{f:.3f}".rstrip("0").rstrip(".")
+            return s
+        except Exception: return v
+
+    def _fmt_khz(v: str) -> str:
+        try: return f"{int(v.replace(',', '').replace(' ', '')) / 1000:.1f}"
+        except Exception: return v
+
+    COLS = [
+        ("File",     "",      None,      40, "l"),
+        ("Duration", "h:m:s", None,      11, "l"),
+        ("Size",     "MiB",   _fmt_mib,   7, "r"),
+        ("BR",       "kb/s",  _fmt_kbps,  7, "r"),
+        ("Fmt",      "",      None,       8, "l"),
+        ("WxH",      "px",    None,      11, "l"),
+        ("FPS",      "fps",   _fmt_fps,   6, "r"),
+        ("Ch",       "#",     None,       3, "r"),
+        ("kHz",      "kHz",   _fmt_khz,   6, "r"),
     ]
+    n_cols = len(COLS)
+
     rows = []
     for path in paths:
         result = subprocess.run(
@@ -878,25 +921,31 @@ def mediainfo_table(paths: list[Path]) -> str:
         if not line:
             continue
         parts = line.split("|")
-        if len(parts) < len(headers):
-            parts += [""] * (len(headers) - len(parts))
-        rows.append(parts[: len(headers)])
+        if len(parts) < n_cols:
+            parts += [""] * (n_cols - len(parts))
+        # Apply format helpers (skip File col 0 and Duration col 1)
+        formatted = []
+        for i, (_, _, fmt_fn, _, _) in enumerate(COLS):
+            val = parts[i] if i < len(parts) else ""
+            if fmt_fn is not None:
+                val = fmt_fn(val.strip())
+            formatted.append(val.strip())
+        rows.append(formatted)
+
     if not rows:
         return "No mediainfo output"
 
-    caps = [60, 12, 10, 12, 10, 9, 8, 12, 8, 12, 12]
+    # Dynamic column widths: max of header/unit/data, capped
     widths = []
-    for idx, header in enumerate(headers):
-        max_len = max(len(header), max(len(r[idx]) for r in rows))
-        widths.append(min(max_len, caps[idx]))
+    for i, (hdr, unit, _, cap, _) in enumerate(COLS):
+        data_max = max(len(r[i]) for r in rows) if rows else 0
+        widths.append(min(cap, max(len(hdr), len(unit), data_max)))
 
-    lines = []
-    lines.append("  ".join(truncate(headers[i], widths[i]).ljust(widths[i]) for i in range(len(headers))))
-    lines.append("  ".join("-" * widths[i] for i in range(len(headers))))
-    for row in rows:
-        line = "  ".join(truncate(str(row[i]), widths[i]).ljust(widths[i]) for i in range(len(headers)))
-        lines.append(line)
-    return "\n".join(lines)
+    # V2 pipe-delimited format
+    hdr_line = "QBITUI_MI_V2|" + "|".join(hdr for hdr, _, _, _, _ in COLS)
+    unit_line = "|".join(unit for _, unit, _, _, _ in COLS)
+    data_lines = ["|".join(r) for r in rows]
+    return "\n".join([hdr_line, unit_line] + data_lines)
 
 
 def added_str(value: int | float | None) -> str:
@@ -1502,6 +1551,21 @@ def load_tracker_keyword_map(path: Path) -> dict[str, str]:
         return {}
 
 
+def _short_tracker_name(url: str) -> str:
+    """Extract a short display name from a tracker announce URL."""
+    if not url:
+        return "-"
+    try:
+        host = urllib.parse.urlparse(url).hostname or ""
+        for prefix in ("tracker.", "www.", "bt.", "announce."):
+            if host.lower().startswith(prefix):
+                host = host[len(prefix):]
+        host = host.split(".")[0] if "." in host else host
+        return host[:12] if host else "-"
+    except Exception:
+        return "-"
+
+
 def resolve_tracker_from_tags(tags_value: str, tracker_keyword_map: dict[str, str]) -> str:
     if not tracker_keyword_map:
         return "-"
@@ -1535,6 +1599,9 @@ def build_rows(torrents: list[dict], tracker_keyword_map: dict[str, str]) -> lis
         peers_raw = t.get("num_leechs")
         if not isinstance(peers_raw, (int, float)):
             peers_raw = t.get("num_incomplete")
+        _trk = resolve_tracker_from_tags(str(tags_value), tracker_keyword_map)
+        if _trk == "-":
+            _trk = _short_tracker_name(t.get("tracker") or "")
         rows.append({
             "name": t.get("name", ""),
             "state": t.get("state", ""),
@@ -1551,7 +1618,7 @@ def build_rows(torrents: list[dict], tracker_keyword_map: dict[str, str]) -> lis
             "eta": eta_str(t.get("eta")),
             "added": added_str(t.get("added_on")),
             "added_short": added_short_str(t.get("added_on")),
-            "tracker": resolve_tracker_from_tags(str(tags_value), tracker_keyword_map),
+            "tracker": _trk,
             "category": t.get("category") or "-",
             "tags": tags_value,
             "hash": t.get("hash") or "",
@@ -2104,6 +2171,7 @@ def render_info_lines(item: dict, width: int) -> list[str]:
     raw = item.get("raw") or {}
     lines = [
         f"Name: {item.get('name')}",
+        "-" * width,
         f"State: {item.get('state')}",
         f"Category: {item.get('category')}",
         f"Tags: {item.get('tags')}",
@@ -2133,7 +2201,7 @@ def render_trackers_lines(trackers: list[dict], width: int, max_rows: int) -> li
     widths = [10, 6, max(20, width - 20)]
     lines = []
     lines.append(f"{headers[0]:<{widths[0]}} {headers[1]:<{widths[1]}} {headers[2]}")
-    lines.append("-" * min(width, widths[0] + widths[1] + widths[2] + 2))
+    lines.append("-" * width)
     for row in trackers[:max_rows]:
         status = str(row.get("status", ""))
         tier = str(row.get("tier", ""))
@@ -2244,7 +2312,7 @@ def render_files_lines(files: list[dict], width: int, max_rows: int, content_pat
     lines = []
     header_line = col_sep.join(fmt_cell(i, h, header_align) for i, h in enumerate(headers))
     lines.append(header_line)
-    lines.append("-" * min(width, len(header_line)))
+    lines.append("-" * width)
     priority_map = {0: "Do not DL", 1: "Normal", 2: "High", 6: "Max", 7: "Forced"}
     for idx, f in enumerate(files[:max_rows]):
         file_name = str(f.get("name", ""))
@@ -2285,7 +2353,7 @@ def render_peers_lines(peers_payload: dict, width: int, max_rows: int) -> list[s
     lines = []
     header_line = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
     lines.append(header_line)
-    lines.append("-" * min(width, len(header_line)))
+    lines.append("-" * width)
     for row in rows[:max_rows]:
         client = truncate(row["client"], widths[5])
         line = (
@@ -2313,24 +2381,92 @@ def render_mediainfo_lines(item: dict, width: int, colors: ColorScheme) -> list[
     src_lines = [l.rstrip() for l in str(info).splitlines()]
     lines: list[str] = []
 
-    # Detect pre-formatted table output (mediainfo_table format):
-    # line 0 = column headers, line 1 = "---" separator
-    is_table = len(src_lines) >= 2 and src_lines[1].lstrip().startswith("-")
+    is_v2 = bool(src_lines) and src_lines[0].startswith("QBITUI_MI_V2|")
+    is_v1 = (not is_v2 and len(src_lines) >= 2 and src_lines[1].lstrip().startswith("-"))
 
-    if is_table:
-        # Table format: render header in lavender, separator dimmed, data rows plain.
-        # Do NOT split on ":" — that would corrupt duration values like "06:41:32.677".
+    if is_v2:
+        col_headers = src_lines[0].split("|")[1:]   # skip "QBITUI_MI_V2" tag
+        col_units   = src_lines[1].split("|")        # leading empty for File col
+        data_rows   = [l.split("|") for l in src_lines[2:] if l.strip()]
+        n_cols = len(col_headers)
+
+        # Per-column display colors
+        col_colors = [
+            colors.FG_PRIMARY,    # 0 File
+            colors.YELLOW,        # 1 Duration
+            colors.YELLOW,        # 2 Size
+            colors.YELLOW,        # 3 BR
+            colors.CYAN,          # 4 Fmt
+            colors.FG_SECONDARY,  # 5 WxH
+            colors.YELLOW,        # 6 FPS
+            colors.FG_SECONDARY,  # 7 Ch
+            colors.YELLOW,        # 8 kHz
+        ]
+        right_cols = {2, 3, 6, 7, 8}
+
+        # Dynamic display widths from data
+        disp_w = []
+        for i in range(n_cols):
+            hdr_w  = len(col_headers[i])
+            unit_w = len(col_units[i]) if i < len(col_units) else 0
+            data_w = max((len(r[i].strip()) if i < len(r) else 0 for r in data_rows), default=0)
+            disp_w.append(max(hdr_w, unit_w, data_w))
+
+        # Give spare terminal width to File column
+        sep = "  "
+        total = sum(disp_w) + len(sep) * (n_cols - 1)
+        spare = width - total
+        if spare > 0:
+            disp_w[0] += spare
+
+        # Header line — full-width lavender
+        hdr_cells = [
+            col_headers[i].rjust(disp_w[i]) if i in right_cols else col_headers[i].ljust(disp_w[i])
+            for i in range(n_cols)
+        ]
+        hdr_str = sep.join(hdr_cells)
+        hdr_padded = hdr_str + " " * max(0, width - len(hdr_str))
+        lines.append(f"{colors.LAVENDER}{hdr_padded}{colors.RESET}")
+
+        # Units sub-row (dim, centered)
+        unit_cells = [
+            (col_units[i] if i < len(col_units) else "").center(disp_w[i])
+            for i in range(n_cols)
+        ]
+        lines.append(f"{colors.FG_TERTIARY}{sep.join(unit_cells)}{colors.RESET}")
+
+        # Full-width separator
+        lines.append(f"{colors.FG_TERTIARY}{'-' * width}{colors.RESET}")
+
+        # Data rows with per-column coloring
+        for row in data_rows:
+            cells_disp = []
+            for i in range(n_cols):
+                val = row[i].strip() if i < len(row) else ""
+                if i == 0:
+                    val = truncate_mid(val, disp_w[i])
+                else:
+                    val = val[:disp_w[i]]
+                aligned = val.rjust(disp_w[i]) if i in right_cols else val.ljust(disp_w[i])
+                c = col_colors[i] if i < len(col_colors) else colors.FG_PRIMARY
+                cells_disp.append(f"{c}{aligned}{colors.RESET}")
+            lines.append(sep.join(cells_disp))
+
+    elif is_v1:
+        # Pre-v1.12.7 space-padded table: header lavender (full-width), sep full-width, data plain
         for i, line in enumerate(src_lines):
             if not line.strip():
                 lines.append("")
             elif i == 0:
-                lines.extend(wrap_ansi(f"{colors.LAVENDER}{line}{colors.RESET}", width))
+                padded = line + " " * max(0, width - len(line))
+                lines.append(f"{colors.LAVENDER}{padded}{colors.RESET}")
             elif line.lstrip().startswith("-"):
-                lines.extend(wrap_ansi(f"{colors.FG_TERTIARY}{line}{colors.RESET}", width))
+                lines.append(f"{colors.FG_TERTIARY}{'-' * width}{colors.RESET}")
             else:
                 lines.extend(wrap_ansi(line, width))
+
     else:
-        # Key:value format (fallback for non-table mediainfo output)
+        # Key:value fallback (raw mediainfo output not from mediainfo_table())
         for line in src_lines:
             line_s = line.strip()
             if not line_s:
@@ -3274,7 +3410,7 @@ def main() -> int:
                         tui_print("Tabs: " + " ".join(tab_labels))
                         tab_divider = "-" * tab_display_width
                         tui_print(tab_divider)
-                        tab_width = max(40, tab_display_width - 4)
+                        tab_width = tab_display_width
                         max_rows = max(10, shutil.get_terminal_size((100, 30)).lines - 15)
                         if active_label == "Info": content_lines = render_info_lines(selected_row, tab_width)
                         elif active_label == "Trackers":
