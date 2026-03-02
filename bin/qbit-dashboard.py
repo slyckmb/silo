@@ -34,7 +34,7 @@ except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 SCRIPT_NAME = "qbit-dashboard"
-VERSION = "1.12.4"
+VERSION = "1.12.5"
 LAST_UPDATED = "2026-03-02"
 FULL_TUI_MIN_WIDTH = 120
 
@@ -1078,12 +1078,12 @@ def draw_footer_full_compact(
         )
         actions_lbl = f"{colors.YELLOW_BOLD}Actions:{colors.RESET}"
     else:
-        actions = f"{colors.FG_TERTIARY}{colors.DIM}(select a torrent to enable actions){colors.RESET}"
+        actions = f"{colors.YELLOW}(select a torrent to enable actions){colors.RESET}"
         actions_lbl = f"{colors.FG_TERTIARY}Actions:{colors.RESET}"
     line1 = f"{actions_lbl} {actions}"
     line2 = (
         f"{colors.FG_SECONDARY}Nav:{colors.RESET} "
-        f"{colors.YELLOW_BOLD}Space/Enter{colors.RESET}{colors.FG_SECONDARY}=select  "
+        f"{colors.YELLOW_BOLD}0-9/Space/Enter{colors.RESET}{colors.FG_SECONDARY}=select  "
         f"{colors.YELLOW_BOLD}↑↓ '/{colors.RESET}{colors.FG_SECONDARY}=move  "
         f"{colors.YELLOW_BOLD}←→ ,.{colors.RESET}{colors.FG_SECONDARY}=page  "
         f"{colors.PURPLE_BOLD}~{colors.RESET}{colors.FG_SECONDARY}=back/clear  "
@@ -1336,7 +1336,7 @@ def draw_footer_v2(
 
         # ── Line 2: NAVIGATE ─────────────────────────────────────────────────
         nav_parts = [
-            f"{colors.YELLOW_BOLD}Space/Enter{colors.RESET}{colors.FG_SECONDARY}=select{colors.RESET}",
+            f"{colors.YELLOW_BOLD}0-9/Space/Enter{colors.RESET}{colors.FG_SECONDARY}=select{colors.RESET}",
             f"{colors.YELLOW_BOLD}↑↓ '/{colors.RESET}{colors.FG_SECONDARY}=move{colors.RESET}",
             f"{colors.YELLOW_BOLD}←→ ,.{colors.RESET}{colors.FG_SECONDARY}=page{colors.RESET}",
             f"{colors.PURPLE_BOLD}~{colors.RESET}{colors.FG_SECONDARY}=back/clear{colors.RESET}",
@@ -1407,7 +1407,8 @@ def draw_footer_v2(
         nav = [
             f"{colors.CYAN_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=Next tab{colors.RESET}",
             f"{colors.CYAN_BOLD}Shift-Tab{colors.RESET}{colors.FG_SECONDARY}=Prev tab{colors.RESET}",
-            f"{colors.FG_SECONDARY}any key{colors.RESET}{colors.FG_TERTIARY}=back{colors.RESET}",
+            f"{colors.YELLOW_BOLD}←/→{colors.RESET}{colors.FG_SECONDARY}=tab nav{colors.RESET}",
+            f"{colors.PURPLE_BOLD}q/ESC{colors.RESET}{colors.FG_SECONDARY}=exit{colors.RESET}",
         ]
 
         cmd_line = truncate(
@@ -1422,15 +1423,44 @@ def draw_footer_v2(
         padding = width - visible_len(title_line) - 4
         lines.append(f"│ {title_line}{' ' * max(0, padding)} │")
 
-        actions = [
+        nav = [
             f"{colors.CYAN_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=Next{colors.RESET}",
             f"{colors.CYAN_BOLD}Shift-Tab{colors.RESET}{colors.FG_SECONDARY}=Prev{colors.RESET}",
-            f"{colors.FG_SECONDARY}any key{colors.RESET}{colors.FG_TERTIARY}=back{colors.RESET}",
+            f"{colors.YELLOW_BOLD}←/→{colors.RESET}{colors.FG_SECONDARY}=tab nav{colors.RESET}",
+            f"{colors.PURPLE_BOLD}q/ESC{colors.RESET}{colors.FG_SECONDARY}=exit{colors.RESET}",
         ]
 
-        cmd_line = truncate("  ".join(actions), width - 4)
+        cmd_line = truncate("  ".join(nav), width - 4)
         padding = max(0, width - visible_len(cmd_line) - 4)
         lines.append(f"│ {cmd_line}{' ' * padding} │")
+
+    elif context == "info":
+        title_line = f"{colors.CYAN_BOLD}INFO VIEW{colors.RESET}"
+        _pad = max(0, width - visible_len(title_line) - 4)
+        lines.append(f"│ {title_line}{' ' * _pad} │")
+        nav = [
+            f"{colors.CYAN_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=Next tab{colors.RESET}",
+            f"{colors.CYAN_BOLD}Shift-Tab{colors.RESET}{colors.FG_SECONDARY}=Prev tab{colors.RESET}",
+            f"{colors.YELLOW_BOLD}←/→{colors.RESET}{colors.FG_SECONDARY}=tab nav{colors.RESET}",
+            f"{colors.PURPLE_BOLD}q/ESC{colors.RESET}{colors.FG_SECONDARY}=exit{colors.RESET}",
+        ]
+        cmd_line = truncate("  ".join(nav), width - 4)
+        _pad2 = max(0, width - visible_len(cmd_line) - 4)
+        lines.append(f"│ {cmd_line}{' ' * _pad2} │")
+
+    elif context == "content":
+        title_line = f"{colors.CYAN_BOLD}CONTENT VIEW{colors.RESET}"
+        _pad = max(0, width - visible_len(title_line) - 4)
+        lines.append(f"│ {title_line}{' ' * _pad} │")
+        nav = [
+            f"{colors.CYAN_BOLD}Tab{colors.RESET}{colors.FG_SECONDARY}=Next tab{colors.RESET}",
+            f"{colors.CYAN_BOLD}Shift-Tab{colors.RESET}{colors.FG_SECONDARY}=Prev tab{colors.RESET}",
+            f"{colors.YELLOW_BOLD}←/→{colors.RESET}{colors.FG_SECONDARY}=tab nav{colors.RESET}",
+            f"{colors.PURPLE_BOLD}q/ESC{colors.RESET}{colors.FG_SECONDARY}=exit{colors.RESET}",
+        ]
+        cmd_line = truncate("  ".join(nav), width - 4)
+        _pad2 = max(0, width - visible_len(cmd_line) - 4)
+        lines.append(f"│ {cmd_line}{' ' * _pad2} │")
 
     lines.append(f"└{'─' * (width - 2)}┘")
 
@@ -2740,8 +2770,9 @@ def main() -> int:
             text = truncate(str(value), w[key])
             return text.rjust(w[key]) if key in right_cols else text.ljust(w[key])
 
+        render_width = total_width()
         lines.append(" ".join(cell(c, headers[c]) for c in cols))
-        lines.append("-" * content_width_local)
+        lines.append("-" * render_width)
 
         for idx, item in enumerate(page_rows_local, 0):
             selected = selection_hash == item.get("hash")
@@ -2774,6 +2805,8 @@ def main() -> int:
 
             if selected:
                 plain = " ".join(cell(c, values[c]) for c in cols)
+                plain = ANSI_RE.sub("", plain)
+                plain = plain.ljust(render_width)
                 lines.append(f"{colors.SELECTION}{plain}{colors.RESET}")
             else:
                 row_parts = []
@@ -2832,7 +2865,7 @@ def main() -> int:
                     width = max(10, content_width_local - len(indent))
                     for line in wrap_ansi(tags_line, width):
                         lines.append(indent + line)
-        return lines
+        return lines, render_width
 
     def build_narrow_list_block(page_rows_local: list[dict], content_width_local: int) -> list[str]:
         lines: list[str] = []
@@ -2860,10 +2893,15 @@ def main() -> int:
             pct_value = str(item.get("progress") or "-")
             pct = truncate(pct_value, pct_width).rjust(pct_width)
 
-            row_plain = f"{focus_marker:<1} {idx:<{no_width}} {st:<2} {name} {trk} {cat} {added_short} {pct}"
-            row_plain = row_plain[:content_width_local].ljust(content_width_local)
-
             if selected:
+                name_p = ANSI_RE.sub("", name).ljust(name_width)
+                trk_p  = ANSI_RE.sub("", trk).ljust(trk_width)
+                cat_p  = ANSI_RE.sub("", cat).ljust(cat_width)
+                row_plain = (
+                    f"{focus_marker:<1} {idx:<{no_width}} {st:<2} {name_p} "
+                    f"{trk_p} {cat_p} {added_short} {pct}"
+                )
+                row_plain = row_plain[:content_width_local].ljust(content_width_local)
                 lines.append(f"{colors.SELECTION}{row_plain}{colors.RESET}")
             else:
                 status_col = colors.status_color(item.get("state") or "")
@@ -3168,8 +3206,8 @@ def main() -> int:
                     list_block_lines = build_narrow_list_block(page_rows, content_width)
                 else:
                     content_width = term_w
-                    divider_line = "-" * content_width
-                    list_block_lines = build_list_block(page_rows, content_width)
+                    list_block_lines, table_render_width = build_list_block(page_rows, content_width)
+                    divider_line = "-" * table_render_width
 
                 if in_tab_view and selection_hash:
                     output_buffer = "\033[H\033[J" # Start with clear
@@ -3316,6 +3354,10 @@ def main() -> int:
                         footer_context = "trackers"
                     elif active_label == "MediaInfo":
                         footer_context = "mediainfo"
+                    elif active_label == "Info":
+                        footer_context = "info"
+                    elif active_label == "Content":
+                        footer_context = "content"
                     footer_lines = draw_footer_v2(
                         colors=colors,
                         context=footer_context,
@@ -3352,22 +3394,35 @@ def main() -> int:
                 last_key_debug = key
                 need_redraw = True
 
-                # ── Tab-view guard: any non-Tab key closes the overlay ────────
+                # ── Tab-view guard ────────────────────────────────────────────
                 if in_tab_view and selection_hash:
                     active_label = tabs[active_tab]
-                    tab_action_keys: set[str] = set()
-                    if active_label == "Trackers":
-                        tab_action_keys = {"R"}
-                    if key not in {"\t", "SHIFT_TAB", "CTRL_TAB"} | tab_action_keys:
+
+                    # q or ESC exits tab view
+                    if key in ("q", "\x1b"):
                         in_tab_view = False
                         have_full_draw = False
                         continue
-                    # Handle tab-specific action keys
+
+                    # Arrow keys → tab navigation
+                    if key == ".":   # Right arrow → next tab
+                        cycle_tabs(direction=1, exit_after_last=False)
+                        continue
+                    if key == ",":   # Left arrow → prev tab
+                        cycle_tabs(direction=-1, exit_after_last=False)
+                        continue
+
+                    # Tab-specific action keys
                     if active_label == "Trackers" and key == "R":
                         reannounce_torrent(opener, api_url, selection_hash)
                         set_banner("Reannouncing…")
                         continue
-                    # \t / SHIFT_TAB / CTRL_TAB fall through to cycle_tabs below
+
+                    # Tab / Shift-Tab / Ctrl-Tab fall through to cycle_tabs below
+                    if key in {"\t", "SHIFT_TAB", "CTRL_TAB"}:
+                        pass
+                    else:
+                        continue   # ignore all other keys; don't exit
                 # ─────────────────────────────────────────────────────────────
 
                 if key == "\x11": return 0 # Ctrl-Q
@@ -3641,6 +3696,7 @@ def main() -> int:
                     if selection_hash:
                         selection_hash = selection_name = None
                         set_banner("Selection cleared.")
+                        have_full_draw = False
                     continue
                 if key == "CTRL_TAB":
                     cycle_tabs(direction=1, exit_after_last=False)
@@ -3660,6 +3716,7 @@ def main() -> int:
                         if selection_hash and focused.get("hash") == selection_hash:
                             selection_hash = selection_name = None
                             set_banner("Selection cleared.")
+                            have_full_draw = False
                         else:
                             selection_hash = focused.get("hash")
                             selection_name = focused.get("name")
