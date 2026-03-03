@@ -34,7 +34,7 @@ except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 SCRIPT_NAME = "qbit-dashboard"
-VERSION = "1.12.7"
+VERSION = "1.12.8"
 LAST_UPDATED = "2026-03-02"
 FULL_TUI_MIN_WIDTH = 120
 
@@ -169,7 +169,18 @@ class ColorScheme:
 
 LOCAL_TZ = ZoneInfo("America/New_York") if ZoneInfo else timezone.utc
 PRESET_FILE = Path(__file__).parent.parent / "config" / "qbit-filter-presets.yml"
-TRACKER_REGISTRY_FILE = Path(__file__).parent.parent / "config" / "tracker-registry.yml"
+def _find_tracker_registry() -> Path:
+    """Locate the tracker registry file: env var > sibling traktor repo > local config."""
+    env_path = os.environ.get("QBIT_TRACKER_REGISTRY_FILE", "")
+    if env_path:
+        return Path(env_path)
+    # Sibling traktor repo: tools/traktor/ when qbitui is at tools/qbitui/
+    sibling = Path(__file__).parent.parent.parent / "traktor" / "config" / "tracker-registry.yml"
+    if sibling.exists():
+        return sibling
+    return Path(__file__).parent.parent / "config" / "tracker-registry.yml"
+
+TRACKER_REGISTRY_FILE = _find_tracker_registry()
 TRACKERS_LIST_URL = "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt"
 QC_TAG_TOOL = Path(__file__).resolve().parent / "media_qc_tag.py"
 QC_LOG_DIR = Path.home() / ".logs" / "media_qc"
@@ -1566,6 +1577,29 @@ def _short_tracker_name(url: str) -> str:
         return "-"
 
 
+def load_tracker_url_pattern_map(path: Path) -> dict[str, str]:
+    """Build a map of tracker URL regex patterns → tracker key from the registry."""
+    if not path.exists() or yaml is None:
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+        trackers = data.get("trackers") or {}
+        result: dict[str, str] = {}
+        for tracker_key, tracker_cfg in trackers.items():
+            if not isinstance(tracker_cfg, dict):
+                continue
+            key = str(tracker_key).strip()
+            if not key:
+                continue
+            qbm = tracker_cfg.get("qbitmanage") or {}
+            pattern = (qbm.get("tracker_url_pattern") or "").strip()
+            if pattern:
+                result[pattern] = key
+        return result
+    except Exception:
+        return {}
+
+
 def resolve_tracker_from_tags(tags_value: str, tracker_keyword_map: dict[str, str]) -> str:
     if not tracker_keyword_map:
         return "-"
@@ -1575,7 +1609,11 @@ def resolve_tracker_from_tags(tags_value: str, tracker_keyword_map: dict[str, st
     return "-"
 
 
-def build_rows(torrents: list[dict], tracker_keyword_map: dict[str, str]) -> list[dict]:
+def build_rows(
+    torrents: list[dict],
+    tracker_keyword_map: dict[str, str],
+    tracker_url_pattern_map: dict[str, str] | None = None,
+) -> list[dict]:
     rows = []
     for t in torrents:
         progress_raw = t.get("progress")
@@ -1600,6 +1638,17 @@ def build_rows(torrents: list[dict], tracker_keyword_map: dict[str, str]) -> lis
         if not isinstance(peers_raw, (int, float)):
             peers_raw = t.get("num_incomplete")
         _trk = resolve_tracker_from_tags(str(tags_value), tracker_keyword_map)
+        if _trk == "-":
+            # Try tracker URL pattern matching from registry
+            tracker_url = t.get("tracker") or ""
+            if tracker_url and tracker_url_pattern_map:
+                for pattern, key in tracker_url_pattern_map.items():
+                    try:
+                        if re.search(pattern, tracker_url, re.IGNORECASE):
+                            _trk = key
+                            break
+                    except re.error:
+                        pass
         if _trk == "-":
             _trk = _short_tracker_name(t.get("tracker") or "")
         rows.append({
@@ -2634,6 +2683,7 @@ def main() -> int:
     macro_config_path = Path(__file__).parent.parent / "config" / "macros.yaml"
     macros_global = load_macros(macro_config_path)
     tracker_keyword_map = load_tracker_keyword_map(TRACKER_REGISTRY_FILE)
+    tracker_url_pattern_map = load_tracker_url_pattern_map(TRACKER_REGISTRY_FILE)
     macros_mtime = macro_config_path.stat().st_mtime if macro_config_path.exists() else -1.0
     last_macro_check = 0.0
     sort_fields = ["added_on", "name", "state", "ratio", "progress", "eta", "size", "dlspeed", "upspeed"]
@@ -3258,7 +3308,7 @@ def main() -> int:
                 else:
                     try:
                         torrents = json.loads(raw) if raw else []
-                        rows = build_rows(torrents, tracker_keyword_map)
+                        rows = build_rows(torrents, tracker_keyword_map, tracker_url_pattern_map)
                         cached_torrents = torrents
                         cached_rows = rows
                         data_changed = True
