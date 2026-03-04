@@ -34,7 +34,7 @@ except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 SCRIPT_NAME = "qbit-dashboard"
-VERSION = "1.12.12"
+VERSION = "1.12.13"
 LAST_UPDATED = "2026-03-02"
 FULL_TUI_MIN_WIDTH = 120
 
@@ -170,10 +170,13 @@ class ColorScheme:
 LOCAL_TZ = ZoneInfo("America/New_York") if ZoneInfo else timezone.utc
 PRESET_FILE = Path(__file__).parent.parent / "config" / "qbit-filter-presets.yml"
 def _find_tracker_registry() -> Path:
-    """Locate the tracker registry file: env var > sibling traktor repo > local config."""
+    """Locate the tracker registry file: env var > /mnt/config/tools > sibling traktor repo > local config."""
     env_path = os.environ.get("QBIT_TRACKER_REGISTRY_FILE", "")
     if env_path:
         return Path(env_path)
+    mnt = Path("/mnt/config/tools/traktor/config/tracker-registry.yml")
+    if mnt.exists():
+        return mnt
     # Sibling traktor repo: tools/traktor/ when qbitui is at tools/qbitui/
     sibling = Path(__file__).parent.parent.parent / "traktor" / "config" / "tracker-registry.yml"
     if sibling.exists():
