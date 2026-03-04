@@ -106,7 +106,7 @@ def _cleanup_expired_leases(lease_dir: Path, now: float) -> list[dict]:
             continue
         expires_at = lease.get("expires_at")
         try:
-            expires_at_f = float(expires_at)
+            expires_at_f = float(expires_at) if expires_at is not None else 0.0
         except Exception:
             expires_at_f = 0.0
         if expires_at_f <= now:
@@ -134,7 +134,7 @@ def _requested_interval_from_lease(lease: dict, default_interval: float) -> floa
 
 
 def parse_args() -> argparse.Namespace:
-    base_dir = Path.home() / ".cache" / "hashall" / "qbit"
+    base_dir = Path.home() / ".cache" / "qbitui"
     parser = argparse.ArgumentParser(
         description="Run qB torrents/info shared cache daemon with lease-based lifecycle."
     )

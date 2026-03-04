@@ -77,7 +77,7 @@ each making independent API calls.
 
 - `qbit-cache-daemon.py` logs into qB, polls `/api/v2/torrents/info` on a
   lease-driven schedule, and writes a shared JSON snapshot to
-  `~/.cache/qbitui/qbit/` (or `~/.cache/hashall/qbit/` for legacy path).
+  `~/.cache/qbitui/` (default; override with `--cache-base-dir`).
 - `qbit-cache-agent.py` renews a lease, optionally starts the daemon, and
   returns a fresh (or stale-fallback) snapshot from the cache file.
 - The dashboard calls the agent subprocess instead of hitting the API directly
@@ -108,18 +108,18 @@ each making independent API calls.
 Prints a JSON object with daemon PID, running state, cache age, active leases,
 and last fetch metadata. Useful for diagnosing stale cache or daemon startup issues.
 
-### Migration note
+### Migration notes
 
-Previously the cache scripts lived in the hashall repo:
-
-```
-hashall/bin/qbit-cache-agent.py   →  qbitui/bin/qbit-cache-agent.py  (canonical)
-hashall/bin/qbit-cache-daemon.py  →  qbitui/bin/qbit-cache-daemon.py (canonical)
-```
-
-The hashall copies are now thin wrappers that exec the qbitui canonical scripts.
+**Cache script relocation** (v1.11): Previously the cache scripts lived in the hashall
+repo.  The hashall copies are now thin wrappers that exec the qbitui canonical scripts.
 Existing hashall scripts (`qbit-start-seeding-gradual.sh`, etc.) continue working
 without any command-line changes.
+
+**Cache directory** (v1.12.1): The default cache base directory changed from
+`~/.cache/hashall/qbit/` to `~/.cache/qbitui/`.  If you have existing cache files at
+the old location, they will simply be ignored (daemon will create a new cache on next
+run).  Pass `--cache-base-dir ~/.cache/hashall/qbit` to all three scripts if you want
+to keep the old path.
 
 ## Status
 
