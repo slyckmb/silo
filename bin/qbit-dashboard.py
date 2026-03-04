@@ -34,7 +34,7 @@ except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 SCRIPT_NAME = "qbit-dashboard"
-VERSION = "1.12.13"
+VERSION = "1.12.14"
 LAST_UPDATED = "2026-03-02"
 FULL_TUI_MIN_WIDTH = 120
 
@@ -1659,6 +1659,7 @@ def build_rows(
         rows.append({
             "name": t.get("name", ""),
             "save_path": (t.get("save_path") or "").rstrip("/") or "-",
+            "nohl": "✓" if "~nohl" in [tag.strip().lower() for tag in str(tags_value).split(",")] else " ",
             "state": t.get("state", ""),
             "st": STATE_CODE.get(t.get("state", ""), "?"),
             "progress": progress,
@@ -2911,6 +2912,7 @@ def main() -> int:
             "no": max(2, len(str(max(0, len(page_rows_local) - 1)))),
             "st": 2,
             "name": 44,
+            "nohl": 1,
             "sp": 14,
             "trk": 8,
             "cat": 8,
@@ -2929,6 +2931,7 @@ def main() -> int:
             "name": 10,
             "sp": 6,
             "trk": 3,
+            "nohl": 1,
             "cat": 3,
             "hash": 12 if show_full_hash else 6,
             "add": 8 if show_added else 0,
@@ -2943,7 +2946,7 @@ def main() -> int:
             "no": 1,
         }
 
-        cols = ["f", "no", "st", "name", "sp", "trk", "cat", "pct", "sz", "up", "dl", "ul", "sd", "pr", "eta"]
+        cols = ["f", "no", "st", "name", "nohl", "sp", "trk", "cat", "pct", "sz", "up", "dl", "ul", "sd", "pr", "eta"]
         if show_added:
             cols.append("add")
         cols.append("hash")
@@ -2959,7 +2962,7 @@ def main() -> int:
             w[key] -= dec
             overflow -= dec
 
-        for key in ("name", "sp", "trk", "cat", "hash", "add", "sz", "up", "dl", "ul", "sd", "pr", "eta", "pct", "no"):
+        for key in ("name", "nohl", "sp", "trk", "cat", "hash", "add", "sz", "up", "dl", "ul", "sd", "pr", "eta", "pct", "no"):
             if overflow <= 0:
                 break
             if key in w:
@@ -2975,6 +2978,7 @@ def main() -> int:
             "no": "No",
             "st": "ST",
             "name": "Name",
+            "nohl": "~",
             "sp": "Sp",
             "trk": "Trk",
             "cat": "Cat",
@@ -3014,6 +3018,7 @@ def main() -> int:
                 "no": str(idx),
                 "st": str(item.get("st") or "?"),
                 "name": str(item.get("name") or "-"),
+                "nohl": str(item.get("nohl") or " "),
                 "sp": str(item.get("save_path") or "-"),
                 "trk": str(item.get("tracker") or "-"),
                 "cat": str(item.get("category") or "-"),
@@ -3101,10 +3106,10 @@ def main() -> int:
         sp_width = 6 if content_width_local >= 96 else 0
         added_width = 11
         pct_width = 4
-        reserved_width = 25 + no_width + trk_width + cat_width + (sp_width + 1 if sp_width else 0)
+        reserved_width = 25 + no_width + trk_width + cat_width + (sp_width + 1 if sp_width else 0) + (2 if sp_width else 0)
         name_width = max(1, content_width_local - reserved_width)
         if sp_width:
-            narrow_header = f"{'F':<1} {'No':<{no_width}} {'ST':<2} {'Name':<{name_width}} {'Sp':<{sp_width}} {'Trk':<{trk_width}} {'Cat':<{cat_width}} {'Added':<{added_width}} {'%':>{pct_width}}"
+            narrow_header = f"{'F':<1} {'No':<{no_width}} {'ST':<2} {'Name':<{name_width}} {'~':<1} {'Sp':<{sp_width}} {'Trk':<{trk_width}} {'Cat':<{cat_width}} {'Added':<{added_width}} {'%':>{pct_width}}"
         else:
             narrow_header = f"{'F':<1} {'No':<{no_width}} {'ST':<2} {'Name':<{name_width}} {'Trk':<{trk_width}} {'Cat':<{cat_width}} {'Added':<{added_width}} {'%':>{pct_width}}"
         narrow_divider = "-" * content_width_local
@@ -3117,6 +3122,7 @@ def main() -> int:
             focus_marker = ">" if idx == focus_idx else " "
             st = str(item.get("st") or "?")
             name = truncate(str(item.get("name") or "-"), name_width).ljust(name_width)
+            nohl_val = str(item.get("nohl") or " ")
             sp_val = truncate(str(item.get("save_path") or "-"), sp_width).ljust(sp_width) if sp_width else ""
             trk = truncate(str(item.get("tracker") or "-"), trk_width).ljust(trk_width)
             cat = truncate(str(item.get("category") or "-"), cat_width).ljust(cat_width)
@@ -3132,7 +3138,7 @@ def main() -> int:
                 if sp_width:
                     row_plain = (
                         f"{focus_marker:<1} {idx:<{no_width}} {st:<2} {name_p} "
-                        f"{sp_p} {trk_p} {cat_p} {added_short} {pct}"
+                        f"{nohl_val:<1} {sp_p} {trk_p} {cat_p} {added_short} {pct}"
                     )
                 else:
                     row_plain = (
@@ -3149,7 +3155,7 @@ def main() -> int:
                 trk_colored = f"{colors.ORANGE}{trk}{colors.RESET}"
                 cat_colored = f"{colors.PURPLE}{cat}{colors.RESET}"
                 if sp_width:
-                    line = f"{focus_col} {idx:<{no_width}} {st_colored} {name_colored} {sp_val} {trk_colored} {cat_colored} {added_short} {pct}"
+                    line = f"{focus_col} {idx:<{no_width}} {st_colored} {name_colored} {nohl_val:<1} {sp_val} {trk_colored} {cat_colored} {added_short} {pct}"
                 else:
                     line = f"{focus_col} {idx:<{no_width}} {st_colored} {name_colored} {trk_colored} {cat_colored} {added_short} {pct}"
                 if visible_len(line) > content_width_local:
