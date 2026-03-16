@@ -28,14 +28,16 @@ from pathlib import Path
 from http.cookiejar import CookieJar
 from typing import Optional
 
+from qbit_hashall_shared import DEFAULT_HASHALL_CACHE_BASE
+
 try:
     import yaml  # type: ignore
 except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 SCRIPT_NAME = "qbit-dashboard"
-VERSION = "1.12.14"
-LAST_UPDATED = "2026-03-02"
+VERSION = "1.14.0"
+LAST_UPDATED = "2026-03-16"
 FULL_TUI_MIN_WIDTH = 120
 
 # ============================================================================
@@ -467,6 +469,44 @@ def qbit_request(opener: urllib.request.OpenerDirector, api_url: str, method: st
         return f"HTTP {exc.code}: {body}".strip()
     except Exception as exc:
         return f"Error: {exc}"
+
+
+def fetch_torrents_info_payload(
+    *,
+    use_shared_cache: bool,
+    cache_agent_cmd: Path,
+    cache_max_age: float,
+    cache_wait_fresh: float,
+    cache_allow_stale: bool,
+    cache_env: dict[str, str],
+    opener: urllib.request.OpenerDirector,
+    api_url: str,
+) -> tuple[str, bool, bool, str | None]:
+    if use_shared_cache:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(cache_agent_cmd),
+                "--max-age",
+                str(cache_max_age),
+                "--wait-fresh",
+                str(cache_wait_fresh),
+                "--ensure-daemon",
+                "--allow-stale" if cache_allow_stale else "--no-allow-stale",
+            ],
+            env=cache_env,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout, True, False, None
+        stderr = (result.stderr or "").strip()
+        message = "Cache agent failed; retaining existing snapshot"
+        if stderr:
+            message = f"{message}: {stderr.splitlines()[-1]}"
+        return "", False, False, message
+
+    return qbit_request(opener, api_url, "GET", "/api/v2/torrents/info"), False, True, None
 
 
 def fetch_system_tags(opener: urllib.request.OpenerDirector, api_url: str) -> list[str]:
@@ -1046,6 +1086,17 @@ def _fmt_cache_status_line(cache_info: dict, colors: ColorScheme) -> str:
     age_str = f"age {float(age):.1f}s" if age is not None else "age ?"
     items = cache_info.get("items")
     items_str = f"  {colors.FG_TERTIARY}{items} items{colors.RESET}" if items is not None else ""
+    qb_profile = cache_info.get("qb_profile") or {}
+    qb_app = str(qb_profile.get("app_version") or "").strip()
+    qb_api = str(qb_profile.get("webapi_version") or "").strip()
+    qb_profile_str = ""
+    if qb_app or qb_api:
+        qb_bits = []
+        if qb_app:
+            qb_bits.append(f"app {qb_app}")
+        if qb_api:
+            qb_bits.append(f"api {qb_api}")
+        qb_profile_str = f"  {colors.FG_TERTIARY}{' / '.join(qb_bits)}{colors.RESET}"
     err = str(cache_info.get("last_error") or "")
     err_str = f"  {colors.ERROR}err:{err[:25]}{colors.RESET}" if err else ""
     leases = cache_info.get("active_leases", 0)
@@ -1057,7 +1108,7 @@ def _fmt_cache_status_line(cache_info: dict, colors: ColorScheme) -> str:
         f"  {colors.FG_SECONDARY}↓qbit {colors.BLUE}{direct}{colors.RESET}"
         f"  {colors.FG_SECONDARY}hit {colors.GREEN}{hit_pct}{colors.RESET}"
         f"  {colors.FG_TERTIARY}{age_str}{colors.RESET}"
-        f"{items_str}{leases_str}{err_str}"
+        f"{items_str}{leases_str}{qb_profile_str}{err_str}"
     )
 
 
@@ -2656,7 +2707,7 @@ def main() -> int:
     parser.add_argument("--cache-allow-stale", action=argparse.BooleanOptionalAction, default=True, help="Allow stale cache fallback (default: true).")
     parser.add_argument("--cache-agent-cmd", type=Path, default=Path(__file__).with_name("qbit-cache-agent.py"), help="Path to qbit-cache-agent.py (default: bin/qbit-cache-agent.py alongside this script).")
     parser.add_argument("--cache-status", action="store_true", help="Print cache/daemon status JSON and exit (requires --use-shared-cache).")
-    parser.add_argument("--cache-base-dir", type=Path, default=Path.home() / ".cache" / "qbitui", help="Shared cache base directory (default: ~/.cache/qbitui).")
+    parser.add_argument("--cache-base-dir", type=Path, default=DEFAULT_HASHALL_CACHE_BASE, help="Shared cache base directory (default: ~/.cache/hashall-qb).")
     parser.add_argument("--mediainfo-cache-dir", type=Path, default=None, help="Override mediainfo cache directory (default: ~/.logs/media_qc/cache/mediainfo, or QBIT_MEDIAINFO_CACHE_DIR env).")
     args = parser.parse_args()
 
@@ -3325,34 +3376,29 @@ def main() -> int:
                 have_full_draw = False
                 need_redraw = True
             if not cached_rows or (now - cache_time) >= fetch_interval:
-                if args.use_shared_cache:
-                    cache_env = {**os.environ, "QBIT_URL": api_url, "QBIT_USER": username, "QBIT_PASS": password}
-                    _agent_result = subprocess.run(
-                        [
-                            sys.executable, str(args.cache_agent_cmd),
-                            "--max-age", str(args.cache_max_age),
-                            "--wait-fresh", str(args.cache_wait_fresh),
-                            "--ensure-daemon",
-                            "--allow-stale" if args.cache_allow_stale else "--no-allow-stale",
-                        ],
-                        env=cache_env,
-                        capture_output=True,
-                        text=True,
-                    )
-                    if _agent_result.returncode == 0 and _agent_result.stdout.strip():
-                        raw = _agent_result.stdout
-                        cache_hit_count += 1
-                    else:
-                        set_banner("Cache agent failed; falling back to direct API")
-                        raw = qbit_request(opener, api_url, "GET", "/api/v2/torrents/info")
-                        direct_hit_count += 1
-                else:
-                    raw = qbit_request(opener, api_url, "GET", "/api/v2/torrents/info")
+                cache_env = {**os.environ, "QBIT_URL": api_url, "QBIT_USER": username, "QBIT_PASS": password}
+                raw, used_cache, used_direct, cache_error = fetch_torrents_info_payload(
+                    use_shared_cache=args.use_shared_cache,
+                    cache_agent_cmd=args.cache_agent_cmd,
+                    cache_max_age=args.cache_max_age,
+                    cache_wait_fresh=args.cache_wait_fresh,
+                    cache_allow_stale=args.cache_allow_stale,
+                    cache_env=cache_env,
+                    opener=opener,
+                    api_url=api_url,
+                )
+                if used_cache:
+                    cache_hit_count += 1
+                if used_direct:
                     direct_hit_count += 1
+                if cache_error:
+                    set_banner(cache_error, duration=4.0)
+                    cache_time = now
+                    raw = ""
                 if raw.startswith("Error:") or raw.startswith("HTTP "):
                     set_banner(f"Network error: {raw}")
                     cache_time = now
-                else:
+                elif raw:
                     try:
                         torrents = json.loads(raw) if raw else []
                         rows = build_rows(torrents, tracker_keyword_map, tracker_url_pattern_map)
@@ -3434,6 +3480,7 @@ def main() -> int:
                 "items": cache_meta.get("items"),
                 "last_error": cache_meta.get("last_error", ""),
                 "active_leases": cache_meta.get("active_leases", 0),
+                "qb_profile": cache_meta.get("qb_profile") or {},
             }
 
             if data_changed or need_redraw:
@@ -3811,6 +3858,9 @@ def main() -> int:
                         _leases = _ci.get("active_leases", 0)
                         _age = _ci.get("cache_age_s")
                         _age_s = f"{float(_age):.1f}s" if _age is not None else "unknown"
+                        _profile = _ci.get("qb_profile") or {}
+                        _app_v = str(_profile.get("app_version") or "").strip()
+                        _api_v = str(_profile.get("webapi_version") or "").strip()
                         _cs_lines.append(
                             f"{colors.FG_SECONDARY}Cache:{colors.RESET}   "
                             f"age {colors.YELLOW}{_age_s}{colors.RESET}  "
@@ -3818,6 +3868,16 @@ def main() -> int:
                             f"items {colors.CYAN}{_items_s}{colors.RESET}  "
                             f"leases {colors.FG_SECONDARY}{_leases}{colors.RESET}"
                         )
+                        if _app_v or _api_v:
+                            _parts = []
+                            if _app_v:
+                                _parts.append(f"app {_app_v}")
+                            if _api_v:
+                                _parts.append(f"api {_api_v}")
+                            _cs_lines.append(
+                                f"{colors.FG_SECONDARY}qB profile:{colors.RESET}  "
+                                f"{colors.CYAN}{' / '.join(_parts)}{colors.RESET}"
+                            )
                         _hits = _ci.get("cache_hits", 0)
                         _direct = _ci.get("direct_hits", 0)
                         _total = _hits + _direct

@@ -69,19 +69,24 @@ ln -s "$PWD/bin/qbit-dashboard.py" ~/.local/bin/qbitui
 
 ## Shared Cache Mode
 
-qbitui includes `bin/qbit-cache-agent.py` and `bin/qbit-cache-daemon.py`, a shared
-polling daemon that lets multiple scripts read qBittorrent torrent data without
-each making independent API calls.
+qbitui now uses `hashall` as the canonical shared qB cache implementation.
+The local `bin/qbit-cache-agent.py` and `bin/qbit-cache-daemon.py` scripts are
+thin wrappers so qbitui can share the same qB compatibility and cache contract
+without maintaining a second daemon/client implementation.
 
 ### How it works
 
-- `qbit-cache-daemon.py` logs into qB, polls `/api/v2/torrents/info` on a
-  lease-driven schedule, and writes a shared JSON snapshot to
-  `~/.cache/qbitui/` (default; override with `--cache-base-dir`).
-- `qbit-cache-agent.py` renews a lease, optionally starts the daemon, and
-  returns a fresh (or stale-fallback) snapshot from the cache file.
+- `hashall` owns the actual daemon/client logic and qB version normalization.
+- qbitui calls the local wrapper scripts, which delegate to hashall's cache
+  agent and daemon.
+- The shared cache lives at `~/.cache/hashall-qb/` by default.
+- The wrappers expect a local `hashall` checkout at
+  `/home/michael/dev/work/hashall`, or a `HASHALL_ROOT` override.
 - The dashboard calls the agent subprocess instead of hitting the API directly
   when `--use-shared-cache` is enabled.
+- If cache reads fail in shared-cache mode, the dashboard keeps its current
+  snapshot and shows an explicit cache-health banner instead of silently
+  falling back to hot direct polling.
 
 ### Example commands
 
@@ -110,16 +115,10 @@ and last fetch metadata. Useful for diagnosing stale cache or daemon startup iss
 
 ### Migration notes
 
-**Cache script relocation** (v1.11): Previously the cache scripts lived in the hashall
-repo.  The hashall copies are now thin wrappers that exec the qbitui canonical scripts.
-Existing hashall scripts (`qbit-start-seeding-gradual.sh`, etc.) continue working
-without any command-line changes.
-
-**Cache directory** (v1.12.1): The default cache base directory changed from
-`~/.cache/hashall/qbit/` to `~/.cache/qbitui/`.  If you have existing cache files at
-the old location, they will simply be ignored (daemon will create a new cache on next
-run).  Pass `--cache-base-dir ~/.cache/hashall/qbit` to all three scripts if you want
-to keep the old path.
+**Cross-repo cache alignment** (v1.13.0): qbitui no longer maintains its own qB
+cache implementation. The local cache scripts now delegate to hashall's shared
+cache tooling so qB version handling and cache behavior live in one place.
+The default cache directory is `~/.cache/hashall-qb/`.
 
 ## Status
 
