@@ -36,7 +36,7 @@ except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 SCRIPT_NAME = "qbit-dashboard"
-VERSION = "1.14.0"
+VERSION = "1.15.0"
 LAST_UPDATED = "2026-03-16"
 FULL_TUI_MIN_WIDTH = 120
 
@@ -507,6 +507,61 @@ def fetch_torrents_info_payload(
         return "", False, False, message
 
     return qbit_request(opener, api_url, "GET", "/api/v2/torrents/info"), False, True, None
+
+
+def ping_daemon_nonblocking(cache_agent_cmd: Path, cache_env: dict[str, str]) -> None:
+    """Fire-and-forget --ensure-daemon ping. Does not block; used when cache is stale."""
+    try:
+        subprocess.Popen(
+            [sys.executable, str(cache_agent_cmd), "--ensure-daemon", "--max-age", "0"],
+            env=cache_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+    except OSError:
+        pass
+
+
+def fast_refresh_visible(
+    hashes: list[str],
+    cached_rows: list[dict],
+    opener: urllib.request.OpenerDirector,
+    api_url: str,
+    tracker_keyword_map: dict[str, str],
+    tracker_url_pattern_map: dict[str, str] | None,
+) -> bool:
+    """Fetch live data for the given hashes directly from qBit and patch cached_rows in-place.
+
+    Uses /api/v2/torrents/info?hashes=... which returns only the requested torrents.
+    Returns True if any row was updated.
+    """
+    if not hashes:
+        return False
+    hashes_param = "|".join(hashes[:60])  # cap; 60 visible rows is already generous
+    raw = qbit_request(opener, api_url, "GET", f"/api/v2/torrents/info?hashes={hashes_param}")
+    if not raw or raw.startswith("Error") or raw.startswith("HTTP "):
+        return False
+    try:
+        updates = json.loads(raw)
+    except json.JSONDecodeError:
+        return False
+    if not updates:
+        return False
+    update_map: dict[str, dict] = {str(t.get("hash", "")).lower(): t for t in updates}
+    row_index: dict[str, int] = {
+        str(r.get("raw", {}).get("hash", "")).lower(): i for i, r in enumerate(cached_rows)
+    }
+    changed = False
+    for h, torrent in update_map.items():
+        idx = row_index.get(h)
+        if idx is None:
+            continue
+        new_rows = build_rows([torrent], tracker_keyword_map, tracker_url_pattern_map)
+        if new_rows:
+            cached_rows[idx] = new_rows[0]
+            changed = True
+    return changed
 
 
 def fetch_system_tags(opener: urllib.request.OpenerDirector, api_url: str) -> list[str]:
@@ -1074,7 +1129,17 @@ def _fmt_cache_status_line(cache_info: dict, colors: ColorScheme) -> str:
     """Compact one-line cache status for the header."""
     if not cache_info.get("enabled"):
         return f"{colors.FG_TERTIARY}Cache: OFF (direct API){colors.RESET}"
-    dot = f"{colors.GREEN}●{colors.RESET}" if cache_info.get("daemon_running") else f"{colors.ERROR}○{colors.RESET}"
+    # Dot color encodes cache freshness: green=fresh, yellow=aging, red=stale, dim=unknown
+    age = cache_info.get("cache_age_s")
+    interval_s = cache_info.get("interval_s") or 30.0
+    if age is None:
+        dot = f"{colors.DIM}○{colors.RESET}"
+    elif age < interval_s:
+        dot = f"{colors.GREEN}●{colors.RESET}"
+    elif age < interval_s * 2:
+        dot = f"{colors.YELLOW}●{colors.RESET}"
+    else:
+        dot = f"{colors.ERROR}●{colors.RESET}"
     path_short = str(cache_info.get("base_path", "")).replace(str(Path.home()), "~")
     interval = cache_info.get("interval_s")
     interval_str = f"{float(interval):.0f}s" if interval is not None else "?"
@@ -1082,7 +1147,6 @@ def _fmt_cache_status_line(cache_info: dict, colors: ColorScheme) -> str:
     direct = cache_info.get("direct_hits", 0)
     total = hits + direct
     hit_pct = f"{(hits / total * 100):.0f}%" if total > 0 else "--"
-    age = cache_info.get("cache_age_s")
     age_str = f"age {float(age):.1f}s" if age is not None else "age ?"
     items = cache_info.get("items")
     items_str = f"  {colors.FG_TERTIARY}{items} items{colors.RESET}" if items is not None else ""
@@ -2708,6 +2772,12 @@ def main() -> int:
     parser.add_argument("--cache-agent-cmd", type=Path, default=Path(__file__).with_name("qbit-cache-agent.py"), help="Path to qbit-cache-agent.py (default: bin/qbit-cache-agent.py alongside this script).")
     parser.add_argument("--cache-status", action="store_true", help="Print cache/daemon status JSON and exit (requires --use-shared-cache).")
     parser.add_argument("--cache-base-dir", type=Path, default=DEFAULT_HASHALL_CACHE_BASE, help="Shared cache base directory (default: ~/.cache/hashall-qb).")
+    parser.add_argument("--fast-refresh-interval", type=float, default=3.0, metavar="SECS",
+                        help="Interval in seconds for fast direct-API refresh of visible rows (0 = disabled, default: 3).")
+    parser.add_argument("--daemon-ping-grace", type=float, default=5.0, metavar="SECS",
+                        help="Extra seconds past cache-max-age before pinging daemon to restart (default: 5).")
+    parser.add_argument("--daemon-ping-interval", type=float, default=5.0, metavar="SECS",
+                        help="How often to re-ping the daemon while cache remains stale (default: 5).")
     parser.add_argument("--mediainfo-cache-dir", type=Path, default=None, help="Override mediainfo cache directory (default: ~/.logs/media_qc/cache/mediainfo, or QBIT_MEDIAINFO_CACHE_DIR env).")
     args = parser.parse_args()
 
@@ -2852,15 +2922,22 @@ def main() -> int:
     cached_torrents: list[dict] = []
     cached_rows: list[dict] = []
     cache_time = 0.0
-    fetch_interval = 2.0
+    fetch_interval = 2.0  # only used in direct-API (non-shared-cache) mode
     # Cache hit tracking (this session)
     cache_hit_count = 0    # requests served from shared cache daemon
     direct_hit_count = 0   # requests served directly from qbit API
     # Daemon meta file for header stats
     _cache_base = Path(args.cache_base_dir).expanduser()
     cache_meta_file = _cache_base / "torrents-info.meta.json"
+    _cache_data_file = _cache_base / "torrents-info.json"
     cache_meta: dict = {}
     last_meta_read = 0.0
+    # A: mtime-guard state (shared-cache mode)
+    last_cache_mtime: float = 0.0       # mtime when we last read the cache file
+    last_daemon_ping: float = 0.0       # last time we fired a non-blocking daemon ping
+    # B: fast visible-row refresh state
+    last_fast_refresh: float = 0.0      # last time we did a direct-API partial fetch
+    visible_hashes: list[str] = []      # hashes currently displayed on screen (set during render)
     list_start_row = 0
     list_block_height = 0
     have_full_draw = False
@@ -3375,39 +3452,72 @@ def main() -> int:
                 last_term_w = current_term_w
                 have_full_draw = False
                 need_redraw = True
-            if not cached_rows or (now - cache_time) >= fetch_interval:
+            # ── A: DB tier — mtime-guarded direct cache file read ─────────────
+            if args.use_shared_cache:
                 cache_env = {**os.environ, "QBIT_URL": api_url, "QBIT_USER": username, "QBIT_PASS": password}
-                raw, used_cache, used_direct, cache_error = fetch_torrents_info_payload(
-                    use_shared_cache=args.use_shared_cache,
-                    cache_agent_cmd=args.cache_agent_cmd,
-                    cache_max_age=args.cache_max_age,
-                    cache_wait_fresh=args.cache_wait_fresh,
-                    cache_allow_stale=args.cache_allow_stale,
-                    cache_env=cache_env,
-                    opener=opener,
-                    api_url=api_url,
-                )
-                if used_cache:
-                    cache_hit_count += 1
-                if used_direct:
-                    direct_hit_count += 1
-                if cache_error:
-                    set_banner(cache_error, duration=4.0)
-                    cache_time = now
-                    raw = ""
-                if raw.startswith("Error:") or raw.startswith("HTTP "):
-                    set_banner(f"Network error: {raw}")
-                    cache_time = now
-                elif raw:
+                try:
+                    _cf_mtime = _cache_data_file.stat().st_mtime if _cache_data_file.exists() else 0.0
+                except OSError:
+                    _cf_mtime = 0.0
+                _cf_age_wall = time.time() - _cf_mtime if _cf_mtime > 0 else float("inf")
+
+                # Lazy daemon ping: only fire when cache has gone stale past grace period
+                if _cf_age_wall > (args.cache_max_age + args.daemon_ping_grace):
+                    if (now - last_daemon_ping) >= args.daemon_ping_interval:
+                        ping_daemon_nonblocking(args.cache_agent_cmd, cache_env)
+                        last_daemon_ping = now
+
+                # Read the file only when its mtime has advanced (new data from daemon)
+                if _cf_mtime > 0 and _cf_mtime != last_cache_mtime:
                     try:
-                        torrents = json.loads(raw) if raw else []
-                        rows = build_rows(torrents, tracker_keyword_map, tracker_url_pattern_map)
-                        cached_torrents = torrents
-                        cached_rows = rows
-                        data_changed = True
-                    except json.JSONDecodeError:
-                        set_banner("Error: Invalid JSON response")
+                        raw = _cache_data_file.read_text("utf-8")
+                    except OSError:
+                        raw = ""
+                    if raw:
+                        try:
+                            torrents = json.loads(raw)
+                            rows = build_rows(torrents, tracker_keyword_map, tracker_url_pattern_map)
+                            cached_torrents = torrents
+                            cached_rows = rows
+                            cache_hit_count += 1
+                            data_changed = True
+                        except json.JSONDecodeError:
+                            set_banner("Error: Invalid JSON in cache file")
+                    last_cache_mtime = _cf_mtime
                     cache_time = now
+
+            else:
+                # Direct-API mode — original behavior
+                if not cached_rows or (now - cache_time) >= fetch_interval:
+                    cache_env = {**os.environ, "QBIT_URL": api_url, "QBIT_USER": username, "QBIT_PASS": password}
+                    raw = qbit_request(opener, api_url, "GET", "/api/v2/torrents/info")
+                    if raw and not (raw.startswith("Error:") or raw.startswith("HTTP ")):
+                        try:
+                            torrents = json.loads(raw)
+                            rows = build_rows(torrents, tracker_keyword_map, tracker_url_pattern_map)
+                            cached_torrents = torrents
+                            cached_rows = rows
+                            direct_hit_count += 1
+                            data_changed = True
+                        except json.JSONDecodeError:
+                            set_banner("Error: Invalid JSON response")
+                    elif raw:
+                        set_banner(f"Network error: {raw}")
+                    cache_time = now
+
+            # ── B: Display tier — fast direct-API refresh of visible rows ──────
+            if (
+                args.use_shared_cache
+                and args.fast_refresh_interval > 0
+                and visible_hashes
+                and (now - last_fast_refresh) >= args.fast_refresh_interval
+            ):
+                if fast_refresh_visible(
+                    visible_hashes, cached_rows, opener, api_url,
+                    tracker_keyword_map, tracker_url_pattern_map,
+                ):
+                    data_changed = True
+                last_fast_refresh = now
 
             rows_to_render = cached_rows
             if scope != "all":
@@ -3431,6 +3541,9 @@ def main() -> int:
             rows_to_render.sort(key=sort_key, reverse=sort_desc)
             
             page_rows, total_pages, page = format_rows(rows_to_render, page, args.page_size)
+            # Track which hashes are visible so B-tier fast refresh can target them
+            visible_hashes = [str(r.get("hash") or r.get("raw", {}).get("hash") or "") for r in page_rows]
+            visible_hashes = [h for h in visible_hashes if h]
 
             if focus_idx >= len(page_rows):
                 focus_idx = max(0, len(page_rows) - 1)
