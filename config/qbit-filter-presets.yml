@@ -1,0 +1,8 @@
+slots:
+  '1':
+  - type: status
+    values:
+    - u
+    - su
+    enabled: true
+    negate: true
