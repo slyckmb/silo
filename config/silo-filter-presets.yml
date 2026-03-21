@@ -6,3 +6,11 @@ slots:
     - su
     enabled: true
     negate: true
+  '2':
+  - type: status
+    values:
+    - u
+    - su
+    - pu
+    enabled: true
+    negate: true
