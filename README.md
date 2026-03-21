@@ -1,4 +1,4 @@
-# qbitui
+# silo
 
 Interactive terminal dashboard for [qBittorrent](https://www.qbittorrent.org/). Navigate, filter, and manage your torrents without leaving the terminal.
 
@@ -61,23 +61,23 @@ qbittorrent:
 ## Install
 
 ```bash
-git clone https://github.com/<you>/qbitui
-cd qbitui
+git clone https://github.com/<you>/silo
+cd silo
 # Optional: symlink into PATH
-ln -s "$PWD/bin/qbit-dashboard.py" ~/.local/bin/qbitui
+ln -s "$PWD/bin/qbit-dashboard.py" ~/.local/bin/silo
 ```
 
 ## Shared Cache Mode
 
-qbitui now uses `hashall` as the canonical shared qB cache implementation.
+silo now uses `hashall` as the canonical shared qB cache implementation.
 The local `bin/qbit-cache-agent.py` and `bin/qbit-cache-daemon.py` scripts are
-thin wrappers so qbitui can share the same qB compatibility and cache contract
+thin wrappers so silo can share the same qB compatibility and cache contract
 without maintaining a second daemon/client implementation.
 
 ### How it works
 
 - `hashall` owns the actual daemon/client logic and qB version normalization.
-- qbitui calls the local wrapper scripts, which delegate to hashall's cache
+- silo calls the local wrapper scripts, which delegate to hashall's cache
   agent and daemon.
 - The shared cache lives at `~/.cache/hashall-qb/` by default.
 - The wrappers expect a local `hashall` checkout at
@@ -115,7 +115,7 @@ and last fetch metadata. Useful for diagnosing stale cache or daemon startup iss
 
 ### Migration notes
 
-**Cross-repo cache alignment** (v1.13.0): qbitui no longer maintains its own qB
+**Cross-repo cache alignment** (v1.13.0): silo no longer maintains its own qB
 cache implementation. The local cache scripts now delegate to hashall's shared
 cache tooling so qB version handling and cache behavior live in one place.
 The default cache directory is `~/.cache/hashall-qb/`.

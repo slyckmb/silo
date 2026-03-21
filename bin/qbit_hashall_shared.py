@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Helpers for consuming hashall's shared qB tooling from qbitui."""
+"""Helpers for consuming hashall's shared qB tooling from silo."""
 
 from __future__ import annotations
 

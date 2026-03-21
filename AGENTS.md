@@ -1,4 +1,4 @@
-# AGENTS — qbitui
+# AGENTS — silo
 
 **Global defaults**: `~/.agent/AGENTS_GLOBAL.md`
 
