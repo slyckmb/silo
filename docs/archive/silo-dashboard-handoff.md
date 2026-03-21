@@ -1,10 +1,10 @@
 # Qbit Dashboard Handoff
 
 ## Focus
-Continue improving `bin/qbit-dashboard.py` (TUI). Current focus: stable, low-latency input handling (no arrow keys), refined keymap, selection UX, and MediaInfo caching/background refresh.
+Continue improving `bin/silo-dashboard.py` (TUI). Current focus: stable, low-latency input handling (no arrow keys), refined keymap, selection UX, and MediaInfo caching/background refresh.
 
 ## Current State Summary
-- File touched: `bin/qbit-dashboard.py` only.
+- File touched: `bin/silo-dashboard.py` only.
 - Version bumped to `1.6.2`.
 - Navigation keys now:
   - `,` page prev
