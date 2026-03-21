@@ -22,7 +22,7 @@ except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 SCRIPT_NAME = "sabnzbd-dashboard"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 LAST_UPDATED = "2026-01-21"
 
 COLOR_CYAN = "\033[36m"
