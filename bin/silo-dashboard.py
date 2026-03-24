@@ -35,7 +35,7 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
-SCRIPT_NAME = "qbit-dashboard"
+SCRIPT_NAME = "silo-dashboard"
 VERSION = "2.0.0"
 LAST_UPDATED = "2026-03-16"
 FULL_TUI_MIN_WIDTH = 120

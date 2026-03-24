@@ -5,7 +5,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "bin"))
 
-import qbit_hashall_shared  # noqa: E402
+import silo_hashall_shared  # noqa: E402
 
 
 def test_resolve_hashall_script_from_env(monkeypatch, tmp_path):
@@ -17,9 +17,9 @@ def test_resolve_hashall_script_from_env(monkeypatch, tmp_path):
 
     monkeypatch.setenv("HASHALL_ROOT", str(fake_root))
 
-    resolved = qbit_hashall_shared.resolve_hashall_script("qb-cache-agent.py")
+    resolved = silo_hashall_shared.resolve_hashall_script("qb-cache-agent.py")
     assert resolved == fake_bin / "qb-cache-agent.py"
 
 
 def test_default_hashall_cache_base_points_to_shared_cache():
-    assert qbit_hashall_shared.DEFAULT_HASHALL_CACHE_BASE == Path.home() / ".cache" / "hashall-qb"
+    assert silo_hashall_shared.DEFAULT_HASHALL_CACHE_BASE == Path.home() / ".cache" / "hashall-qb"
