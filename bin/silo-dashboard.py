@@ -179,7 +179,7 @@ def _find_tracker_registry() -> Path:
     mnt = Path("/mnt/config/tools/traktor/config/tracker-registry.yml")
     if mnt.exists():
         return mnt
-    # Sibling traktor repo: tools/traktor/ when qbitui is at tools/qbitui/
+    # Sibling traktor repo: tools/traktor/ when silo is at tools/silo/
     sibling = Path(__file__).parent.parent.parent / "traktor" / "config" / "tracker-registry.yml"
     if sibling.exists():
         return sibling
@@ -394,8 +394,9 @@ def read_qbit_config(path: Path) -> tuple[str, str]:
     if yaml is not None:
         try:
             data = yaml.safe_load(path.read_text()) or {}
-            qb = (data.get("downloaders") or {}).get("qbittorrent", {}) or {}
-            return qb.get("api_url", "") or "", qb.get("credentials_file", "") or ""
+            qb = (data.get("downloaders") or {}).get("qbittorrent", {})
+            if qb:
+                return qb.get("api_url", "") or "", qb.get("credentials_file", "") or ""
         except Exception:
             pass
 
@@ -2670,11 +2671,11 @@ def render_mediainfo_lines(item: dict, width: int, colors: ColorScheme) -> list[
     src_lines = [l.rstrip() for l in str(info).splitlines()]
     lines: list[str] = []
 
-    is_v2 = bool(src_lines) and src_lines[0].startswith("SILO_MI_V2|")
+    is_v2 = bool(src_lines) and (src_lines[0].startswith("SILO_MI_V2|") or src_lines[0].startswith("QBITUI_MI_V2|"))
     is_v1 = (not is_v2 and len(src_lines) >= 2 and src_lines[1].lstrip().startswith("-"))
 
     if is_v2:
-        col_headers = src_lines[0].split("|")[1:]   # skip "SILO_MI_V2" tag
+        col_headers = src_lines[0].split("|")[1:]   # skip "SILO_MI_V2" or "QBITUI_MI_V2" tag
         col_units   = src_lines[1].split("|")        # leading empty for File col
         data_rows   = [l.split("|") for l in src_lines[2:] if l.strip()]
         n_cols = len(col_headers)

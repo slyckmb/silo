@@ -38,12 +38,13 @@ def resolve_hashall_root() -> Path:
         daemon = root / "bin" / "qb-cache-daemon.py"
         if not (agent.exists() and daemon.exists()):
             continue
-        # Skip shims that exec back into qbitui — they create a circular exec loop.
+        # Skip shims that exec back into silo — they create a circular exec loop.
         # A shim is identified by importing or referencing silo_hashall_shared.
         try:
             text = agent.read_text(encoding="utf-8", errors="ignore")
             if "silo_hashall_shared" in text or "DEPRECATED SHIM" in text:
                 continue
+
         except OSError:
             continue
         return root

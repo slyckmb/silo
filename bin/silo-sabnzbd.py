@@ -84,7 +84,9 @@ def read_api_url_from_config(path: Path) -> str:
     if yaml is not None:
         try:
             data = yaml.safe_load(path.read_text()) or {}
-            return (data.get("downloaders") or {}).get("sabnzbd", {}).get("api_url", "") or ""
+            api_url = (data.get("downloaders") or {}).get("sabnzbd", {}).get("api_url", "")
+            if api_url:
+                return api_url
         except Exception:
             pass
 
