@@ -1,4 +1,4 @@
-# Qbit Dashboard Handoff
+# Silo Dashboard Handoff
 
 ## Focus
 Continue improving `bin/silo-dashboard.py` (TUI). Current focus: stable, low-latency input handling (no arrow keys), refined keymap, selection UX, and MediaInfo caching/background refresh.
