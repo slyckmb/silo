@@ -1,1 +1,54 @@
-bin/silo-dashboard.py
+#!/usr/bin/env python3
+"""
+silo: Unified Downloader Dashboard Dispatcher.
+
+This shim acts as the primary entry point for the silo suite, allowing users
+to switch between qBittorrent, SABnzbd, and (future) rTorrent views.
+"""
+
+import os
+import sys
+import subprocess
+from pathlib import Path
+
+# Canonical paths to dashboards
+BIN_DIR = Path(__file__).parent.resolve() / "bin"
+DASHBOARDS = {
+    "qbit": BIN_DIR / "silo-dashboard.py",
+    "sab": BIN_DIR / "silo-sabnzbd.py",
+    "sabnzbd": BIN_DIR / "silo-sabnzbd.py",
+}
+
+
+def main():
+    argv = sys.argv[1:]
+    
+    # Default to qbit if no subcommand is provided
+    subcommand = "qbit"
+    if argv and argv[0] in DASHBOARDS:
+        subcommand = argv[0]
+        argv = argv[1:]
+    elif argv and (argv[0].startswith("-") or argv[0].startswith("--")):
+        # If it's a flag, pass it to the default qbit dashboard
+        subcommand = "qbit"
+    elif argv:
+        # Unknown subcommand, print help
+        print(f"Usage: silo [subcommand] [options]")
+        print("\nAvailable subcommands:")
+        for cmd in sorted(DASHBOARDS.keys()):
+            print(f"  {cmd}")
+        print("\nIf no subcommand is provided, 'qbit' is used by default.")
+        sys.exit(1)
+
+    script_path = DASHBOARDS[subcommand]
+    if not script_path.exists():
+        print(f"ERROR: Dashboard script not found: {script_path}", file=sys.stderr)
+        sys.exit(1)
+
+    # Use os.execve to replace the current process with the target dashboard
+    env = os.environ.copy()
+    os.execve(sys.executable, [sys.executable, str(script_path), *argv], env)
+
+
+if __name__ == "__main__":
+    main()
