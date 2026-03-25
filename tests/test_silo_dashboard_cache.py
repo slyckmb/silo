@@ -6,7 +6,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "bin"))
 
-DASHBOARD_PATH = ROOT / "bin" / "qbit-dashboard.py"
+DASHBOARD_PATH = ROOT / "bin" / "silo-dashboard.py"
 
 spec = importlib.util.spec_from_file_location("qbit_dashboard", DASHBOARD_PATH)
 qbit_dashboard = importlib.util.module_from_spec(spec)

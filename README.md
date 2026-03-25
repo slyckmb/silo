@@ -21,16 +21,16 @@ Interactive terminal dashboard for [qBittorrent](https://www.qbittorrent.org/). 
 
 ```bash
 # Basic — connects to localhost:8080
-./bin/qbit-dashboard.py
+./bin/silo-dashboard.py
 
 # Custom host/port
-./bin/qbit-dashboard.py --host 10.0.0.10 --port 9003
+./bin/silo-dashboard.py --host 10.0.0.10 --port 9003
 
 # With credentials
-./bin/qbit-dashboard.py --username admin --password secret
+./bin/silo-dashboard.py --username admin --password secret
 
 # Enable mediainfo column
-./bin/qbit-dashboard.py --mediainfo
+./bin/silo-dashboard.py --mediainfo
 ```
 
 ### Config file (optional)
@@ -64,13 +64,13 @@ qbittorrent:
 git clone https://github.com/<you>/silo
 cd silo
 # Optional: symlink into PATH
-ln -s "$PWD/bin/qbit-dashboard.py" ~/.local/bin/silo
+ln -s "$PWD/bin/silo-dashboard.py" ~/.local/bin/silo
 ```
 
 ## Shared Cache Mode
 
 silo now uses `hashall` as the canonical shared qB cache implementation.
-The local `bin/qbit-cache-agent.py` and `bin/qbit-cache-daemon.py` scripts are
+The local `bin/silo-cache-agent.py` and `bin/silo-cache-daemon.py` scripts are
 thin wrappers so silo can share the same qB compatibility and cache contract
 without maintaining a second daemon/client implementation.
 
@@ -92,22 +92,22 @@ without maintaining a second daemon/client implementation.
 
 ```bash
 # Enable shared cache mode (daemon auto-started if needed)
-./bin/qbit-dashboard.py --use-shared-cache
+./bin/silo-dashboard.py --use-shared-cache
 
 # Tune freshness window
-./bin/qbit-dashboard.py --use-shared-cache --cache-max-age 10 --cache-wait-fresh 3
+./bin/silo-dashboard.py --use-shared-cache --cache-max-age 10 --cache-wait-fresh 3
 
 # Disallow stale fallback (hard-fail if cache is too old)
-./bin/qbit-dashboard.py --use-shared-cache --no-cache-allow-stale
+./bin/silo-dashboard.py --use-shared-cache --no-cache-allow-stale
 
 # Point to a custom agent location
-./bin/qbit-dashboard.py --use-shared-cache --cache-agent-cmd /usr/local/bin/qbit-cache-agent.py
+./bin/silo-dashboard.py --use-shared-cache --cache-agent-cmd /usr/local/bin/silo-cache-agent.py
 ```
 
 ### Troubleshooting with --cache-status
 
 ```bash
-./bin/qbit-dashboard.py --use-shared-cache --cache-status
+./bin/silo-dashboard.py --use-shared-cache --cache-status
 ```
 
 Prints a JSON object with daemon PID, running state, cache age, active leases,

@@ -5,12 +5,29 @@ from __future__ import annotations
 
 import os
 import sys
+import urllib.request
+import urllib.parse
 from pathlib import Path
+from http.cookiejar import CookieJar
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 DEFAULT_HASHALL_ROOT = Path("/home/michael/dev/work/hashall")
 DEFAULT_HASHALL_CACHE_BASE = Path.home() / ".cache" / "hashall-qb"
+
+
+def check_auth_bypass(api_url: str) -> bool:
+    """Check if the qB API is accessible without login (e.g. localhost whitelist)."""
+    jar = CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    try:
+        # Normalize URL: ensure no trailing slash
+        url = api_url.rstrip("/")
+        req = urllib.request.Request(f"{url}/api/v2/app/version", method="GET")
+        with opener.open(req, timeout=5) as resp:
+            return resp.getcode() == 200
+    except Exception:
+        return False
 
 
 def resolve_hashall_root() -> Path:
@@ -38,12 +55,13 @@ def resolve_hashall_root() -> Path:
         daemon = root / "bin" / "qb-cache-daemon.py"
         if not (agent.exists() and daemon.exists()):
             continue
-        # Skip shims that exec back into qbitui — they create a circular exec loop.
-        # A shim is identified by importing or referencing qbit_hashall_shared.
+        # Skip shims that exec back into silo — they create a circular exec loop.
+        # A shim is identified by importing or referencing silo_hashall_shared.
         try:
             text = agent.read_text(encoding="utf-8", errors="ignore")
-            if "qbit_hashall_shared" in text or "DEPRECATED SHIM" in text:
+            if "silo_hashall_shared" in text or "DEPRECATED SHIM" in text:
                 continue
+
         except OSError:
             continue
         return root
@@ -62,10 +80,24 @@ def resolve_hashall_script(script_name: str) -> Path:
     return script_path
 
 
-def exec_hashall_script(script_name: str):
+def exec_hashall_script(script_name: str, use_bypass: bool = False):
     hashall_root = resolve_hashall_root()
     script_path = hashall_root / "bin" / script_name
     env = os.environ.copy()
+
+    if use_bypass:
+        # Try optimistic bypass to avoid triggering bans in background tasks
+        qbit_url = (
+            env.get("QBIT_URL")
+            or env.get("QBITTORRENT_API_URL")
+            or "http://localhost:9003"
+        ).strip()
+        if check_auth_bypass(qbit_url):
+            # Whitelist active: clear password to prevent the agent from attempting login
+            env.pop("QBIT_PASS", None)
+            env.pop("QBITTORRENTAPI_PASSWORD", None)
+            env.pop("QBITTORRENT_PASSWORD", None)
+
     hashall_src = str(hashall_root / "src")
     current_pythonpath = env.get("PYTHONPATH", "").strip()
     env["PYTHONPATH"] = hashall_src if not current_pythonpath else f"{hashall_src}{os.pathsep}{current_pythonpath}"
