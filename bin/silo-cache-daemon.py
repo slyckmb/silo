@@ -5,4 +5,4 @@ from silo_hashall_shared import exec_hashall_script
 
 
 if __name__ == "__main__":
-    exec_hashall_script("qb-cache-daemon.py")
+    exec_hashall_script("qb-cache-daemon.py", use_bypass=True)
