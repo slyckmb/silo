@@ -1353,6 +1353,13 @@ def _fmt_cache_status_line(cache_info: dict, colors: ColorScheme) -> str:
         qb_profile_str = f"  {colors.FG_TERTIARY}{' / '.join(qb_bits)}{colors.RESET}"
     err = str(cache_info.get("last_error") or "")
     err_str = f"  {colors.ERROR}err:{err[:25]}{colors.RESET}" if err else ""
+    cf = int(cache_info.get("consecutive_failures", 0))
+    if cf >= 5:
+        cf_str = f"  {colors.ERROR_BOLD}{cf}F{colors.RESET}"
+    elif cf > 0:
+        cf_str = f"  {colors.YELLOW}{cf}F{colors.RESET}"
+    else:
+        cf_str = ""
     leases = cache_info.get("active_leases", 0)
     leases_str = f"  {colors.FG_TERTIARY}{leases}L{colors.RESET}"
     fast_iv = cache_info.get("fast_refresh_interval", 0)
@@ -1370,7 +1377,7 @@ def _fmt_cache_status_line(cache_info: dict, colors: ColorScheme) -> str:
         f"  {colors.FG_SECONDARY}↓{client_label} {colors.BLUE}{direct}{colors.RESET}"
         f"  {colors.FG_SECONDARY}hit {colors.GREEN}{hit_pct}{colors.RESET}"
         f"  {colors.FG_TERTIARY}{age_str}{colors.RESET}"
-        f"{items_str}{leases_str}{qb_profile_str}{no_daemon_str}{err_str}"
+        f"{items_str}{leases_str}{qb_profile_str}{no_daemon_str}{cf_str}{err_str}"
     )
 
 
@@ -4291,6 +4298,7 @@ def main() -> int:
                     "cache_age_s": _rt_age,
                     "items": _rt_meta.get("items"),
                     "last_error": _rt_meta.get("last_error", ""),
+                    "consecutive_failures": _rt_meta.get("consecutive_failures", 0),
                     "active_leases": _rt_meta.get("active_leases", 0),
                     "qb_profile": _rt_profile,
                     "fast_refresh_interval": 0,
@@ -4317,6 +4325,7 @@ def main() -> int:
                     "cache_age_s": _cache_age,
                     "items": cache_meta.get("items"),
                     "last_error": cache_meta.get("last_error", ""),
+                    "consecutive_failures": cache_meta.get("consecutive_failures", 0),
                     "active_leases": cache_meta.get("active_leases", 0),
                     "qb_profile": cache_meta.get("qb_profile") or {},
                     "fast_refresh_interval": args.fast_refresh_interval,

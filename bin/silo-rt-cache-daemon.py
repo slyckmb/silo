@@ -88,6 +88,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sleep-step",       type=float, default=0.5)
     p.add_argument("--once",             action="store_true",
                    help="Fetch once, write cache, then exit (useful for scripts)")
+    p.add_argument("--max-consecutive-failures", type=int, default=10,
+                   help="Exit daemon after this many consecutive fetch failures (default: 10, 0=disabled)")
     p.add_argument("--status",           action="store_true",
                    help="Print cache/daemon status as JSON and exit")
     # ── Fallback transport ────────────────────────────────────────────────────
@@ -199,7 +201,8 @@ def main() -> int:
         idle_grace=args.idle_grace,
         sleep_step=args.sleep_step,
         run_once=args.once,
-        extra_meta=_transport,   # live mutable reference
+        extra_meta=_transport,
+        max_consecutive_failures=args.max_consecutive_failures,
     )
 
 
