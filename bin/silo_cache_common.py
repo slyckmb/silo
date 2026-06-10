@@ -14,6 +14,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import random
 import signal
 import socket
 import subprocess
@@ -426,6 +427,7 @@ def run_daemon(
     sleep_step: float,
     run_once: bool = False,
     extra_meta: Optional[dict] = None,
+    max_consecutive_failures: int = 10,
 ) -> int:
     """
     Generic lease-aware daemon loop.
@@ -523,12 +525,26 @@ def run_daemon(
                     now = time.time()
                     consecutive_failures += 1
                     backoff = min(2 ** (consecutive_failures - 1) * min_interval, _MAX_BACKOFF)
+                    backoff += random.uniform(0, 0.3 * backoff)
                     _write_meta({"source": "daemon_error", "last_error": str(exc),
                                  "last_error_at": now, "last_error_at_iso": _iso(now),
                                  "active_leases": n, "effective_interval_s": eff_interval,
                                  "backoff_s": backoff,
                                  "consecutive_failures": consecutive_failures,
                                  "updated_at": now, "updated_at_iso": _iso(now)})
+                    if max_consecutive_failures > 0 and consecutive_failures >= max_consecutive_failures:
+                        _write_meta({"source": "daemon_fatal",
+                                     "fatal_error": str(exc),
+                                     "consecutive_failures": consecutive_failures,
+                                     "max_consecutive_failures": max_consecutive_failures,
+                                     "updated_at": now, "updated_at_iso": _iso(now)})
+                        print(
+                            f"{sys.argv[0]}: FATAL — {consecutive_failures} consecutive failures "
+                            f"(max {max_consecutive_failures}). "
+                            f"Last error: {exc}",
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
                     last_fetch_at = now - (eff_interval - backoff)
 
             time.sleep(sleep_step)

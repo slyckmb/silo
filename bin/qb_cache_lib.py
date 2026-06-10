@@ -11,6 +11,7 @@ import argparse
 import fcntl
 import json
 import os
+import random
 import signal
 import socket
 import subprocess
@@ -452,6 +453,12 @@ def build_daemon_parser() -> argparse.ArgumentParser:
     parser.add_argument("--idle-grace", type=float, default=120.0)
     parser.add_argument("--sleep-step", type=float, default=0.5)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument(
+        "--max-consecutive-failures",
+        type=int,
+        default=10,
+        help="Exit daemon after this many consecutive fetch failures (default: 10, 0=disabled)",
+    )
     return parser
 
 
@@ -606,6 +613,7 @@ def daemon_main(argv: Optional[List[str]] = None) -> int:
                     backoff_s = min(
                         2 ** (consecutive_failures - 1) * args.min_interval, _MAX_BACKOFF_S
                     )
+                    backoff_s += random.uniform(0, 0.3 * backoff_s)
                     _write_meta(
                         {
                             "source": "daemon_error",
@@ -620,6 +628,24 @@ def daemon_main(argv: Optional[List[str]] = None) -> int:
                             "updated_at_iso": _iso(now),
                         }
                     )
+                    if args.max_consecutive_failures > 0 and consecutive_failures >= args.max_consecutive_failures:
+                        _write_meta(
+                            {
+                                "source": "daemon_fatal",
+                                "fatal_error": str(exc),
+                                "consecutive_failures": consecutive_failures,
+                                "max_consecutive_failures": args.max_consecutive_failures,
+                                "updated_at": now,
+                                "updated_at_iso": _iso(now),
+                            }
+                        )
+                        print(
+                            f"qb-cache-daemon: FATAL — {consecutive_failures} consecutive failures "
+                            f"(max {args.max_consecutive_failures}). "
+                            f"Last error: {exc}",
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
                     # Retry sooner than normal interval; backs off 15s, 30s, 60s cap
                     last_fetch_at = now - (effective_interval_s - backoff_s)
 

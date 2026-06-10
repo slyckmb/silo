@@ -505,7 +505,7 @@ def fetch(url: str) -> list[dict]:
         proxy   = connect(url)
         results = proxy.d.multicall.filtered("", "", "d.hash=", *_MULTICALL_FIELDS)
     except Exception:
-        return []
+        raise
     return _process_results(results, proxy)
 
 
