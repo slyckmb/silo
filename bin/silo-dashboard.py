@@ -4208,7 +4208,7 @@ def main() -> int:
                 raw = row.get("raw", {})
                 if sort_field == "added_on": return raw.get("added_on") or 0
                 if sort_field == "name": return row.get("name", "")
-                if sort_field == "state": return state_group(raw.get("state", ""))
+                if sort_field == "state": return row.get("st", raw.get("state", ""))
                 if sort_field == "ratio": return raw.get("ratio") or 0
                 if sort_field == "progress": return raw.get("progress") or 0
                 if sort_field == "eta": return raw.get("eta") or 0
