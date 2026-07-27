@@ -37,3 +37,12 @@ Thumbs.db
 .idea/
 .vscode/
 SESSION.md
+/OPS.md
+/JOB-QUEUE.md
+/INIT.md
+/SESSION.md
+/QUICKSTART.md
+/REPO-MASTERY.md
+.chatrap/
+.chatrap/state/jobs.json
+.chatrap/state/JOB-QUEUE-rendered.md
