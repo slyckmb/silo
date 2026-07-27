@@ -638,9 +638,11 @@ def _action_pause_resume(proxy: xmlrpc.client.ServerProxy,
         state   = item.get("raw", {}).get("state", "")
         paused  = state in ("pausedDL", "pausedUP", "stoppedDL", "stoppedUP")
         if paused:
+            proxy.d.custom3.set(hash_val.upper(), "")
             proxy.d.start(hash_val.upper())
             return "Resumed"
         else:
+            proxy.d.custom3.set(hash_val.upper(), "~silo-paused")
             proxy.d.stop(hash_val.upper())
             return "Paused"
     except Exception as e:
